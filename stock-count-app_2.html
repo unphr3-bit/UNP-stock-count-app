@@ -1,0 +1,1440 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+<title>ระบบตรวจนับสต๊อกสินค้า</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
+<style>
+  :root{
+    --bg:#F7F7F4;
+    --surface:#FFFFFF;
+    --surface-2:#FCFCFA;
+    --border:#E4E3DC;
+    --text:#1C1C1A;
+    --text-muted:#6F6E67;
+    --text-faint:#A6A59C;
+    --accent:#2F5D50;
+    --accent-dark:#234539;
+    --accent-soft:#E4ECE8;
+    --ok:#2F5D50;
+    --ok-soft:#E4ECE8;
+    --excess:#A8720F;
+    --excess-soft:#FBF0DC;
+    --shortage:#B23B2E;
+    --shortage-soft:#FBE7E3;
+    --notfound:#71706A;
+    --notfound-soft:#EDEDE8;
+    --extra:#5B55A0;
+    --extra-soft:#ECEBF6;
+    --radius-s:6px;
+    --radius-m:10px;
+    --radius-l:16px;
+    --shadow-sm:0 1px 2px rgba(20,20,15,0.06);
+    --shadow-md:0 6px 20px rgba(20,20,15,0.08);
+    --font-display:'Space Grotesk',sans-serif;
+    --font-body:'Inter',sans-serif;
+    --font-mono:'IBM Plex Mono',monospace;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg);
+    color:var(--text);
+    font-family:var(--font-body);
+    -webkit-font-smoothing:antialiased;
+    min-height:100vh;
+    padding-bottom:76px;
+  }
+  button{font-family:inherit;cursor:pointer;}
+  input,select,textarea{font-family:inherit;}
+  ::selection{background:var(--accent-soft);}
+
+  /* ---------- topbar ---------- */
+  .topbar{
+    position:sticky;top:0;z-index:40;
+    background:rgba(247,247,244,0.92);
+    backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--border);
+    padding:14px 18px 12px;
+  }
+  .topbar-row{display:flex;align-items:center;justify-content:space-between;gap:12px;}
+  .brand{display:flex;align-items:baseline;gap:8px;}
+  .brand-mark{
+    width:9px;height:9px;border-radius:2px;background:var(--accent);
+    display:inline-block;transform:rotate(45deg);
+  }
+  .brand-name{font-family:var(--font-display);font-weight:700;font-size:16.5px;letter-spacing:-0.01em;}
+  .brand-sub{font-size:11px;color:var(--text-faint);font-family:var(--font-mono);letter-spacing:0.02em;}
+  .ticker{
+    font-family:var(--font-mono);
+    font-size:12.5px;
+    color:var(--text-muted);
+    text-align:right;
+    line-height:1.5;
+    white-space:nowrap;
+  }
+  .ticker b{color:var(--text);font-weight:600;}
+  .coverage-track{
+    margin-top:9px;height:3px;background:var(--border);border-radius:3px;overflow:hidden;
+  }
+  .coverage-fill{height:100%;background:var(--accent);width:0%;transition:width .4s ease;}
+
+  main{max-width:900px;margin:0 auto;padding:20px 16px 40px;}
+  .view{display:none;animation:fadein .25s ease;}
+  .view.active{display:block;}
+  @keyframes fadein{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:none;}}
+
+  h1.page-title{font-family:var(--font-display);font-size:20px;font-weight:600;margin:2px 0 4px;letter-spacing:-0.01em;}
+  p.page-desc{color:var(--text-muted);font-size:13.5px;margin:0 0 20px;line-height:1.6;}
+
+  .card{
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:var(--radius-l);
+    padding:20px;
+    margin-bottom:16px;
+  }
+  .card-title{font-weight:600;font-size:14.5px;margin:0 0 3px;display:flex;align-items:center;gap:8px;}
+  .card-sub{color:var(--text-muted);font-size:12.5px;margin:0 0 14px;line-height:1.55;}
+
+  label.field-label{display:block;font-size:12.5px;font-weight:600;color:var(--text-muted);margin:0 0 6px;}
+  textarea.data-input{
+    width:100%;min-height:140px;border:1px solid var(--border);border-radius:var(--radius-m);
+    padding:12px 13px;font-family:var(--font-mono);font-size:12.5px;line-height:1.6;
+    resize:vertical;background:var(--surface-2);color:var(--text);
+  }
+  textarea.data-input:focus,input:focus,select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
+  input[type=text],input[type=number],input[type=file],select{
+    width:100%;border:1px solid var(--border);border-radius:var(--radius-m);
+    padding:11px 12px;font-size:14px;background:var(--surface-2);color:var(--text);
+  }
+
+  .btn{
+    border:1px solid transparent;border-radius:var(--radius-m);
+    padding:11px 18px;font-size:13.5px;font-weight:600;
+    display:inline-flex;align-items:center;gap:7px;justify-content:center;
+    transition:transform .12s ease, background .15s ease;
+  }
+  .btn:active{transform:scale(0.97);}
+  .btn-primary{background:var(--accent);color:#fff;}
+  .btn-primary:hover{background:var(--accent-dark);}
+  .btn-outline{background:transparent;color:var(--text);border-color:var(--border);}
+  .btn-outline:hover{border-color:var(--text-faint);}
+  .btn-ghost{background:transparent;color:var(--text-muted);}
+  .btn-ghost:hover{color:var(--text);}
+  .btn-danger-ghost{background:transparent;color:var(--shortage);}
+
+  /* ---------- OneDrive auth ---------- */
+  #auth-gate{
+    position:fixed;inset:0;z-index:100;background:var(--bg);
+    display:flex;align-items:center;justify-content:center;padding:24px;
+  }
+  #auth-gate.hidden{display:none;}
+  .auth-card{
+    background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-l);
+    padding:28px 24px;max-width:360px;width:100%;text-align:center;box-shadow:var(--shadow-md);
+  }
+  .auth-card .glyph-lg{font-size:30px;margin-bottom:10px;}
+  .auth-card h2{font-family:var(--font-display);font-size:17px;margin:0 0 6px;}
+  .auth-card p{color:var(--text-muted);font-size:13px;line-height:1.6;margin:0 0 18px;}
+  .auth-status-line{font-family:var(--font-mono);font-size:11.5px;color:var(--text-faint);margin-top:14px;min-height:16px;}
+  .user-badge{
+    display:flex;align-items:center;gap:8px;background:var(--surface-2);border:1px solid var(--border);
+    border-radius:999px;padding:5px 10px 5px 5px;font-size:11.5px;color:var(--text-muted);white-space:nowrap;
+  }
+  .user-badge .dot{width:7px;height:7px;border-radius:50%;background:var(--ok);flex:none;}
+  .user-badge .dot.syncing{background:var(--excess);animation:pulse 1s infinite;}
+  .user-badge .dot.err{background:var(--shortage);}
+  @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.35;}}
+  .user-badge button{background:none;border:none;color:var(--text-faint);font-size:11px;text-decoration:underline;padding:0;cursor:pointer;}
+  .topbar-row{flex-wrap:wrap;}
+  .btn-block{width:100%;}
+  .btn-row{display:flex;gap:10px;flex-wrap:wrap;}
+  .btn:disabled{opacity:.45;cursor:not-allowed;}
+  .btn-sm{padding:7px 12px;font-size:12.5px;}
+
+  .pill{
+    display:inline-flex;align-items:center;gap:6px;
+    font-size:11.5px;font-weight:600;padding:4px 10px;border-radius:99px;
+    font-family:var(--font-mono);
+  }
+  .pill-ok{background:var(--ok-soft);color:var(--ok);}
+  .pill-excess{background:var(--excess-soft);color:var(--excess);}
+  .pill-shortage{background:var(--shortage-soft);color:var(--shortage);}
+  .pill-notfound{background:var(--notfound-soft);color:var(--notfound);}
+  .pill-extra{background:var(--extra-soft);color:var(--extra);}
+  .pill-muted{background:var(--surface-2);color:var(--text-faint);border:1px solid var(--border);}
+
+  table.data-table{width:100%;border-collapse:collapse;font-size:13px;}
+  table.data-table th{
+    text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:0.04em;
+    color:var(--text-faint);font-weight:600;padding:8px 10px;border-bottom:1px solid var(--border);
+    white-space:nowrap;
+  }
+  table.data-table td{padding:10px 10px;border-bottom:1px solid var(--border);}
+  table.data-table tr:last-child td{border-bottom:none;}
+  table.data-table tr.row-selectable:hover{background:var(--surface-2);}
+  .mono{font-family:var(--font-mono);}
+  .table-scroll{overflow-x:auto;border-radius:var(--radius-m);border:1px solid var(--border);}
+  .table-scroll table{border:none;}
+  .table-scroll .data-table th, .table-scroll .data-table td{border-bottom:1px solid var(--border);}
+  .chk-cell{width:34px;text-align:center;}
+
+  .empty-state{
+    text-align:center;padding:38px 20px;color:var(--text-faint);font-size:13px;
+  }
+  .empty-state .glyph{font-size:26px;margin-bottom:8px;opacity:.6;}
+
+  /* ---------- tabbar ---------- */
+  .tabbar{
+    position:fixed;bottom:0;left:0;right:0;z-index:50;
+    background:rgba(255,255,255,0.94);backdrop-filter:blur(10px);
+    border-top:1px solid var(--border);
+    display:flex;justify-content:center;
+    padding:8px 10px calc(8px + env(safe-area-inset-bottom));
+  }
+  .tabbar-inner{display:flex;gap:4px;max-width:420px;width:100%;}
+  .tab-btn{
+    flex:1;background:none;border:none;padding:8px 4px 6px;
+    display:flex;flex-direction:column;align-items:center;gap:4px;
+    color:var(--text-faint);border-radius:var(--radius-s);
+  }
+  .tab-btn.active{color:var(--accent);}
+  .tab-btn .tab-icon{width:20px;height:20px;}
+  .tab-btn .tab-label{font-size:10.5px;font-weight:600;letter-spacing:0.01em;}
+
+  /* ---------- import view ---------- */
+  .stat-strip{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:4px;}
+  .stat-chip{
+    flex:1;min-width:110px;background:var(--surface-2);border:1px solid var(--border);
+    border-radius:var(--radius-m);padding:12px 14px;
+  }
+  .stat-chip .num{font-family:var(--font-display);font-size:22px;font-weight:700;line-height:1.1;}
+  .stat-chip .lbl{font-size:11px;color:var(--text-muted);margin-top:3px;}
+
+  .file-drop{
+    border:1.5px dashed var(--border);border-radius:var(--radius-m);
+    padding:22px;text-align:center;color:var(--text-muted);font-size:12.5px;
+    background:var(--surface-2);cursor:pointer;position:relative;
+  }
+  .file-drop:hover{border-color:var(--accent);}
+  .file-drop input{position:absolute;inset:0;opacity:0;cursor:pointer;}
+
+  /* ---------- connect-phone card ---------- */
+  .connect-card{
+    display:none;
+    background:var(--accent-dark);color:#fff;border-radius:var(--radius-l);
+    padding:20px;margin-bottom:16px;
+    display:flex;gap:18px;align-items:center;
+  }
+  @media(max-width:639px){.connect-card{display:none !important;}}
+  .connect-card .qr-box{background:#fff;border-radius:10px;padding:8px;flex-shrink:0;}
+  .connect-card .info{flex:1;}
+  .connect-card .info .ttl{font-family:var(--font-display);font-weight:600;font-size:15px;margin-bottom:4px;}
+  .connect-card .info p{font-size:12.5px;opacity:.85;line-height:1.6;margin:0 0 10px;}
+  .connect-card .link-row{display:flex;gap:8px;align-items:center;}
+  .connect-card .link-box{
+    font-family:var(--font-mono);font-size:11.5px;background:rgba(255,255,255,0.12);
+    padding:7px 10px;border-radius:7px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;
+  }
+  .connect-card .btn-copy{
+    background:#fff;color:var(--accent-dark);border:none;border-radius:7px;padding:7px 12px;
+    font-size:12px;font-weight:700;white-space:nowrap;
+  }
+
+  /* ---------- scan view ---------- */
+  .scan-stage{
+    background:#111310;border-radius:var(--radius-l);overflow:hidden;position:relative;
+    aspect-ratio:1/1;max-height:420px;display:flex;align-items:center;justify-content:center;
+    border:1px solid var(--border);
+  }
+  #qr-reader{width:100%;height:100%;}
+  #qr-reader video{object-fit:cover;}
+  .scan-placeholder{color:#8a8f87;text-align:center;font-size:12.5px;padding:20px;}
+  .scan-placeholder .glyph{font-size:30px;margin-bottom:10px;}
+  .scan-controls{display:flex;gap:10px;margin-top:14px;}
+  .last-scan-strip{margin-top:16px;}
+  .scan-row{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:10px 12px;border-radius:var(--radius-m);background:var(--surface-2);
+    border:1px solid var(--border);margin-bottom:8px;font-size:13px;
+  }
+  .scan-row .meta{display:flex;flex-direction:column;gap:2px;}
+  .scan-row .meta .code{font-weight:600;font-family:var(--font-mono);font-size:13px;}
+  .scan-row .meta .lot{color:var(--text-muted);font-size:11.5px;font-family:var(--font-mono);}
+  .scan-row .qty{font-family:var(--font-mono);font-weight:700;font-size:14px;}
+
+  /* ---------- dashboard ---------- */
+  .dash-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:18px;}
+  @media(min-width:640px){.dash-grid{grid-template-columns:repeat(5,1fr);}}
+  .dash-card{
+    background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-m);
+    padding:14px 14px 12px;position:relative;overflow:hidden;cursor:pointer;transition:border-color .15s;
+  }
+  .dash-card:hover{border-color:var(--text-faint);}
+  .dash-card.selected{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft);}
+  .dash-card .bar{position:absolute;left:0;top:0;bottom:0;width:3px;}
+  .dash-card .num{font-family:var(--font-display);font-size:24px;font-weight:700;}
+  .dash-card .lbl{font-size:11.5px;color:var(--text-muted);margin-top:2px;}
+
+  .filter-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;}
+  .filter-tab{
+    padding:7px 13px;border-radius:99px;font-size:12px;font-weight:600;
+    border:1px solid var(--border);background:var(--surface);color:var(--text-muted);
+  }
+  .filter-tab.active{background:var(--text);color:#fff;border-color:var(--text);}
+
+  .search-box{position:relative;margin-bottom:12px;}
+  .search-box input{padding-left:34px;}
+  .search-box svg{position:absolute;left:11px;top:50%;transform:translateY(-50%);opacity:.4;}
+
+  /* ---------- modal ---------- */
+  .modal-overlay{
+    position:fixed;inset:0;background:rgba(20,20,16,0.5);
+    display:flex;align-items:flex-end;justify-content:center;z-index:100;
+    backdrop-filter:blur(2px);
+  }
+  @media(min-width:640px){.modal-overlay{align-items:center;}}
+  .modal-overlay.hidden{display:none;}
+  .modal-sheet{
+    background:var(--surface);width:100%;max-width:420px;
+    border-radius:20px 20px 0 0;padding:22px 22px calc(22px + env(safe-area-inset-bottom));
+    box-shadow:var(--shadow-md);
+  }
+  @media(min-width:640px){.modal-sheet{border-radius:var(--radius-l);}}
+  .modal-handle{width:36px;height:4px;background:var(--border);border-radius:3px;margin:0 auto 16px;}
+  .modal-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;}
+  .modal-code{font-family:var(--font-mono);font-weight:700;font-size:17px;}
+  .modal-lot{font-family:var(--font-mono);font-size:12.5px;color:var(--text-muted);margin-top:3px;}
+  .modal-desc{font-size:13px;color:var(--text-muted);margin-top:4px;}
+  .baseline-hint{
+    display:flex;justify-content:space-between;background:var(--surface-2);border-radius:var(--radius-m);
+    padding:10px 13px;font-size:12.5px;color:var(--text-muted);margin-bottom:16px;border:1px solid var(--border);
+  }
+  .qty-stepper{display:flex;align-items:center;gap:12px;justify-content:center;margin:6px 0 6px;}
+  .qty-unit-label{text-align:center;font-size:12px;color:var(--text-muted);margin-bottom:16px;}
+  .stepper-btn{
+    width:46px;height:46px;border-radius:50%;border:1px solid var(--border);background:var(--surface-2);
+    font-size:20px;font-weight:600;display:flex;align-items:center;justify-content:center;color:var(--text);
+  }
+  .stepper-btn:active{background:var(--accent-soft);}
+  .qty-value{
+    font-family:var(--font-display);font-size:38px;font-weight:700;min-width:90px;text-align:center;
+    border:none;background:none;
+  }
+  .modal-note{background:var(--extra-soft);color:var(--extra);border-radius:var(--radius-m);padding:9px 12px;font-size:12px;margin-bottom:14px;}
+
+  .close-x{background:none;border:none;color:var(--text-faint);font-size:20px;line-height:1;padding:4px;}
+
+  .toast{
+    position:fixed;bottom:92px;left:50%;transform:translateX(-50%);
+    background:var(--text);color:#fff;padding:10px 18px;border-radius:99px;
+    font-size:12.5px;font-weight:500;z-index:200;box-shadow:var(--shadow-md);
+    opacity:0;pointer-events:none;transition:opacity .25s, transform .25s;
+    max-width:88vw;text-align:center;
+  }
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(-4px);}
+
+  .divider{height:1px;background:var(--border);margin:18px 0;}
+  .small-link{font-size:12px;color:var(--accent);text-decoration:underline;cursor:pointer;background:none;border:none;padding:0;}
+
+  /* ---------- context menu ---------- */
+  .ctx-menu{
+    position:fixed;z-index:300;background:var(--surface);border:1px solid var(--border);
+    border-radius:var(--radius-m);box-shadow:var(--shadow-md);min-width:190px;padding:6px;display:none;
+  }
+  .ctx-menu button{
+    display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:none;border:none;
+    padding:9px 10px;font-size:13px;border-radius:7px;color:var(--text);
+  }
+  .ctx-menu button:hover{background:var(--surface-2);}
+  .ctx-menu .ctx-hint{padding:6px 10px 4px;font-size:11px;color:var(--text-faint);border-bottom:1px solid var(--border);margin-bottom:4px;}
+
+  #print-area{display:none;}
+  @media print{
+    body *{visibility:hidden;}
+    #print-area, #print-area *{visibility:visible;}
+    #print-area{display:block !important;position:absolute;top:0;left:0;width:100%;padding:14px;}
+    .print-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
+    .print-item{border:1px dashed #999;border-radius:6px;padding:8px;text-align:center;break-inside:avoid;}
+    .print-item .qcode{font-family:var(--font-mono);font-size:11px;margin-top:6px;font-weight:700;}
+    .print-item .qlot{font-family:var(--font-mono);font-size:9.5px;color:#555;}
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-row">
+    <div class="brand">
+      <span class="brand-mark"></span>
+      <div>
+        <div class="brand-name">ตรวจนับสต๊อก</div>
+        <div class="brand-sub" id="session-tag">SESSION —</div>
+      </div>
+    </div>
+    <div class="ticker">
+      นับแล้ว <b id="ticker-counted">0</b>/<span id="ticker-total">0</span> SKU<br>
+      ครอบคลุม <b id="ticker-pct">0%</b>
+    </div>
+  </div>
+  <div class="topbar-row" style="margin-top:8px;">
+    <div class="user-badge" id="user-badge" style="display:none;">
+      <span class="dot" id="sync-dot"></span>
+      <span id="user-email">—</span>
+      <button id="btn-signout">ออกจากระบบ</button>
+    </div>
+  </div>
+  <div class="coverage-track"><div class="coverage-fill" id="coverage-fill"></div></div>
+</header>
+
+<div id="auth-gate">
+  <div class="auth-card">
+    <div class="glyph-lg">☁️</div>
+    <h2>เข้าสู่ระบบ OneDrive</h2>
+    <p>ข้อมูลตั้งต้นและผลตรวจนับของแอปนี้จะถูกเก็บไว้ในโฟลเดอร์แอปบน OneDrive ของบัญชีองค์กร/โรงเรียนของคุณ ทุกเครื่องที่ล็อกอินด้วยบัญชีเดียวกันจะเห็นข้อมูล sync กันแบบเรียลไทม์</p>
+    <button class="btn btn-primary btn-block" id="btn-signin">เข้าสู่ระบบด้วย Microsoft</button>
+    <div class="auth-status-line" id="auth-status-line"></div>
+  </div>
+</div>
+
+<main id="main-app" style="display:none;">
+
+  <!-- ============ IMPORT VIEW ============ -->
+  <section class="view active" id="view-import">
+    <h1 class="page-title">นำเข้าข้อมูลตั้งต้น</h1>
+    <p class="page-desc">วางข้อมูลสินค้าที่ export จากระบบ SQL เพื่อใช้เป็นยอดตั้งต้นสำหรับเปรียบเทียบผลตรวจนับ</p>
+
+    <div class="stat-strip" style="margin-bottom:16px;">
+      <div class="stat-chip"><div class="num" id="stat-sku">0</div><div class="lbl">รายการสินค้า (SKU × Lot)</div></div>
+      <div class="stat-chip"><div class="num" id="stat-qty">0</div><div class="lbl">จำนวนรวมตามระบบ</div></div>
+      <div class="stat-chip"><div class="num" id="stat-imported-at">—</div><div class="lbl">นำเข้าล่าสุด</div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">📋 วางข้อมูลจาก SQL</div>
+      <div class="card-sub">รูปแบบ CSV คั่นด้วยจุลภาค เรียงคอลัมน์ได้ 3 แบบ: (1) รหัสสินค้า, Lot, จำนวน &nbsp;(2) รหัสสินค้า, ชื่อสินค้า, Lot, จำนวน &nbsp;(3) รหัสสินค้า, ชื่อสินค้า, Lot, จำนวน, หน่วยนับ</div>
+      <textarea class="data-input" id="csv-input" placeholder="SKU-001,น้ำมันพืชตราถั่วทอง,LOT240601,120,ขวด&#10;SKU-002,ซอสมะเขือเทศ 200g,LOT240602,80,กล่อง&#10;SKU-003,,LOT240603,45"></textarea>
+      <div class="btn-row" style="margin-top:12px;">
+        <button class="btn btn-primary" id="btn-parse-csv">นำเข้าข้อมูล</button>
+        <button class="btn btn-outline" id="btn-sample">ใช้ข้อมูลตัวอย่าง</button>
+        <label class="btn btn-outline" style="position:relative;overflow:hidden;">
+          อัปโหลดไฟล์ .csv
+          <input type="file" id="file-csv" accept=".csv,text/csv" style="position:absolute;inset:0;opacity:0;cursor:pointer;">
+        </label>
+      </div>
+    </div>
+
+    <div class="card" id="baseline-preview-card" style="display:none;">
+      <div class="card-title">รายการที่นำเข้าแล้ว</div>
+      <div class="card-sub">ติ๊กเลือกรายการที่ต้องการ แล้วกด "พิมพ์ QR ที่เลือก" หรือคลิกขวาที่แถวเพื่อพิมพ์รายการเดียว</div>
+      <div class="btn-row" style="margin-bottom:12px;">
+        <button class="btn btn-outline btn-sm" id="btn-print-selected" disabled>🖨 พิมพ์ QR ที่เลือก (<span id="sel-count">0</span>)</button>
+        <button class="btn btn-ghost btn-sm" id="btn-print-all">พิมพ์ QR ทั้งหมด</button>
+        <button class="btn btn-ghost btn-danger-ghost btn-sm" id="btn-clear-baseline">ล้างข้อมูลตั้งต้น</button>
+      </div>
+      <div class="table-scroll">
+        <table class="data-table">
+          <thead><tr>
+            <th class="chk-cell"><input type="checkbox" id="chk-all"></th>
+            <th>รหัสสินค้า</th><th>ชื่อสินค้า</th><th>Lot</th><th style="text-align:right;">จำนวน</th><th>หน่วย</th>
+          </tr></thead>
+          <tbody id="baseline-table-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="empty-state" id="import-empty" >
+      <div class="glyph">▦</div>
+      ยังไม่มีข้อมูลตั้งต้น — วางข้อมูล CSV ด้านบนเพื่อเริ่มต้น
+    </div>
+  </section>
+
+  <!-- ============ SCAN VIEW ============ -->
+  <section class="view" id="view-scan">
+    <h1 class="page-title">สแกนตรวจนับ</h1>
+    <p class="page-desc">สแกน QR Code บนสินค้า ระบบจะถามจำนวนที่นับได้ทุกครั้งที่สแกน แล้วส่งยอดเข้าระบบทันที</p>
+
+    <div class="connect-card" id="connect-card">
+      <div class="qr-box" id="connect-qr"></div>
+      <div class="info">
+        <div class="ttl">📱 เชื่อมต่อโทรศัพท์เพื่อสแกน</div>
+        <p>เปิดกล้องมือถือสแกน QR นี้ เพื่อเปิดหน้าสแกนบนมือถือทันที ข้อมูลจะซิงค์เข้าระบบเดียวกันแบบเรียลไทม์</p>
+        <div class="link-row">
+          <div class="link-box" id="connect-link"></div>
+          <button class="btn-copy" id="btn-copy-link">คัดลอกลิงก์</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="scan-stage" id="scan-stage">
+      <div id="qr-reader"></div>
+      <div class="scan-placeholder" id="scan-placeholder">
+        <div class="glyph">◱</div>
+        กดเริ่มสแกนเพื่อเปิดกล้อง
+      </div>
+    </div>
+    <div class="scan-controls">
+      <button class="btn btn-primary btn-block" id="btn-start-scan">▶ เริ่มสแกน</button>
+      <button class="btn btn-outline btn-block" id="btn-stop-scan" style="display:none;">■ หยุดสแกน</button>
+    </div>
+    <div class="btn-row" style="margin-top:10px;">
+      <button class="btn btn-ghost btn-block" id="btn-manual-entry">⌨ ป้อนรหัสด้วยตนเอง</button>
+    </div>
+
+    <div class="last-scan-strip">
+      <div class="card-title" style="margin-top:22px;">รายการที่บันทึกล่าสุด</div>
+      <div id="recent-scans-list"></div>
+      <div class="empty-state" id="scan-empty">
+        <div class="glyph">◌</div>
+        ยังไม่มีการสแกนในเซสชันนี้
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ DASHBOARD VIEW ============ -->
+  <section class="view" id="view-dashboard">
+    <h1 class="page-title">สรุปผลตรวจนับ</h1>
+    <p class="page-desc">เปรียบเทียบยอดตามระบบกับยอดที่ตรวจนับได้จริง</p>
+
+    <div class="dash-grid">
+      <div class="dash-card" data-filter="all"><div class="bar" style="background:var(--text-faint);"></div><div class="num" id="dc-all">0</div><div class="lbl">ทั้งหมด</div></div>
+      <div class="dash-card" data-filter="ok"><div class="bar" style="background:var(--ok);"></div><div class="num" id="dc-ok">0</div><div class="lbl">ตรงกัน</div></div>
+      <div class="dash-card" data-filter="excess"><div class="bar" style="background:var(--excess);"></div><div class="num" id="dc-excess">0</div><div class="lbl">เกิน</div></div>
+      <div class="dash-card" data-filter="shortage"><div class="bar" style="background:var(--shortage);"></div><div class="num" id="dc-shortage">0</div><div class="lbl">ขาด</div></div>
+      <div class="dash-card" data-filter="notfound"><div class="bar" style="background:var(--notfound);"></div><div class="num" id="dc-notfound">0</div><div class="lbl">ไม่พบ</div></div>
+    </div>
+    <div class="dash-grid" style="grid-template-columns:1fr;margin-top:-8px;">
+      <div class="dash-card" data-filter="extra"><div class="bar" style="background:var(--extra);"></div><div class="num" id="dc-extra">0</div><div class="lbl">พบสินค้านอกระบบ (ไม่มีในยอดตั้งต้น)</div></div>
+    </div>
+
+    <div class="btn-row" style="margin-bottom:16px;">
+      <button class="btn btn-primary" id="btn-export-excel">⇩ ส่งออก Excel</button>
+      <button class="btn btn-ghost btn-danger-ghost" id="btn-reset-count">รีเซ็ตการตรวจนับ</button>
+    </div>
+
+    <div class="search-box">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+      <input type="text" id="dash-search" placeholder="ค้นหารหัสสินค้า หรือ Lot...">
+    </div>
+
+    <div class="table-scroll">
+      <table class="data-table">
+        <thead><tr>
+          <th>รหัสสินค้า</th><th>Lot</th><th>หน่วย</th>
+          <th style="text-align:right;">ตามระบบ</th>
+          <th style="text-align:right;">นับได้</th>
+          <th style="text-align:right;">ผลต่าง</th>
+          <th>สถานะ</th>
+        </tr></thead>
+        <tbody id="dash-table-body"></tbody>
+      </table>
+    </div>
+    <div class="empty-state" id="dash-empty">
+      <div class="glyph">▤</div>
+      ไม่มีข้อมูลตรงกับตัวกรองนี้
+    </div>
+  </section>
+
+</main>
+
+<nav class="tabbar" id="tabbar" style="display:none;">
+  <div class="tabbar-inner">
+    <button class="tab-btn active" data-view="import">
+      <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      <span class="tab-label">นำเข้าข้อมูล</span>
+    </button>
+    <button class="tab-btn" data-view="scan">
+      <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><line x1="14" y1="14" x2="21" y2="14"/><line x1="14" y1="21" x2="21" y2="21"/><line x1="14" y1="14" x2="14" y2="21"/><line x1="21" y1="14" x2="21" y2="21"/></svg>
+      <span class="tab-label">สแกนนับ</span>
+    </button>
+    <button class="tab-btn" data-view="dashboard">
+      <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+      <span class="tab-label">Dashboard</span>
+    </button>
+  </div>
+</nav>
+
+<!-- SCAN CONFIRM MODAL -->
+<div class="modal-overlay hidden" id="modal-scan">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-head">
+      <div>
+        <div class="modal-code" id="m-code">—</div>
+        <div class="modal-lot" id="m-lot">LOT —</div>
+        <div class="modal-desc" id="m-desc"></div>
+      </div>
+      <button class="close-x" id="m-close">✕</button>
+    </div>
+    <div id="m-note-wrap"></div>
+    <div class="baseline-hint">
+      <span>ยอดตามระบบ</span>
+      <b id="m-baseline-qty">0</b>
+    </div>
+    <div class="baseline-hint" id="m-already-wrap" style="display:none;">
+      <span>นับสะสมไปแล้ว</span>
+      <b id="m-already-qty">0</b>
+    </div>
+    <label class="field-label" style="text-align:center;display:block;">จำนวนที่นับได้รอบนี้</label>
+    <div class="qty-stepper">
+      <button class="stepper-btn" id="m-minus">−</button>
+      <input class="qty-value" type="number" id="m-qty" value="1" min="0" inputmode="numeric">
+      <button class="stepper-btn" id="m-plus">+</button>
+    </div>
+    <div class="qty-unit-label" id="m-unit-label"></div>
+    <div class="btn-row">
+      <button class="btn btn-outline btn-block" id="m-cancel">ยกเลิก</button>
+      <button class="btn btn-primary btn-block" id="m-save">บันทึกและสแกนต่อ</button>
+    </div>
+  </div>
+</div>
+
+<!-- MANUAL ENTRY MODAL -->
+<div class="modal-overlay hidden" id="modal-manual">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-head">
+      <div class="modal-code">ป้อนข้อมูลด้วยตนเอง</div>
+      <button class="close-x" id="man-close">✕</button>
+    </div>
+    <label class="field-label">รหัสสินค้า</label>
+    <input type="text" id="man-code" placeholder="เช่น SKU-001" style="margin-bottom:12px;">
+    <label class="field-label">Lot</label>
+    <input type="text" id="man-lot" placeholder="เช่น LOT240601" style="margin-bottom:12px;">
+    <label class="field-label" style="text-align:center;display:block;">จำนวนที่นับได้</label>
+    <div class="qty-stepper">
+      <button class="stepper-btn" id="man-minus">−</button>
+      <input class="qty-value" type="number" id="man-qty" value="1" min="0" inputmode="numeric">
+      <button class="stepper-btn" id="man-plus">+</button>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-outline btn-block" id="man-cancel">ยกเลิก</button>
+      <button class="btn btn-primary btn-block" id="man-save">บันทึก</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div class="ctx-menu" id="ctx-menu">
+  <div class="ctx-hint" id="ctx-hint">รายการ</div>
+  <button id="ctx-print">🖨 พิมพ์ QR รายการนี้</button>
+</div>
+
+<div id="print-area">
+  <h3>ป้ายฉลาก QR Code สำหรับตรวจนับ</h3>
+  <div class="print-grid" id="print-grid"></div>
+</div>
+
+<script>
+/* ============================================================
+   STATE
+   ============================================================ */
+let baseline = [];   // [{code, desc, lot, qty, unit}]
+let scans = {};       // key -> {code, lot, qty, history:[{qty,time}]}
+let scannerRunning = false;
+let html5QrCode = null;
+let modalOpen = false;
+let currentDashFilter = 'all';
+let sessionTag = '';
+let selectedKeys = new Set();
+let ctxTargetItem = null;
+
+function keyOf(code, lot){ return (code||'').trim().toUpperCase() + '||' + (lot||'').trim().toUpperCase(); }
+
+/* ============================================================
+   ONEDRIVE CONFIG — fill these in from your Azure App Registration
+   ============================================================ */
+const ONEDRIVE_CONFIG = {
+  CLIENT_ID: 'YOUR_CLIENT_ID_HERE',          // Application (client) ID from Azure Portal
+  TENANT_ID: 'organizations',                 // your org's Directory (tenant) ID, or leave as 'organizations' for any work/school account
+  DATA_FILE: 'stockcount-data.json',           // filename stored in the app's OneDrive folder
+};
+const GRAPH_ROOT = 'https://graph.microsoft.com/v1.0';
+const GRAPH_SCOPES = ['User.Read', 'Files.ReadWrite.AppFolder'];
+
+let msalInstance = null;
+let msalAccount = null;
+let driveEtag = null;
+let syncTimer = null;
+
+function setSyncDot(state){
+  // state: 'ok' | 'syncing' | 'err'
+  const dot = document.getElementById('sync-dot');
+  if(!dot) return;
+  dot.className = 'dot' + (state==='syncing' ? ' syncing' : state==='err' ? ' err' : '');
+}
+
+function initMsal(){
+  msalInstance = new msal.PublicClientApplication({
+    auth: {
+      clientId: ONEDRIVE_CONFIG.CLIENT_ID,
+      authority: `https://login.microsoftonline.com/${ONEDRIVE_CONFIG.TENANT_ID}`,
+      redirectUri: window.location.origin + window.location.pathname,
+    },
+    cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: true }
+  });
+}
+
+async function handleAuthOnLoad(){
+  const authLine = document.getElementById('auth-status-line');
+  if(ONEDRIVE_CONFIG.CLIENT_ID === 'YOUR_CLIENT_ID_HERE'){
+    authLine.textContent = '⚠ ยังไม่ได้ตั้งค่า CLIENT_ID ในไฟล์นี้ — ดูคำแนะนำการตั้งค่า Azure App Registration';
+    return;
+  }
+  try{
+    const result = await msalInstance.handleRedirectPromise();
+    if(result && result.account){ msalAccount = result.account; }
+    else {
+      const accounts = msalInstance.getAllAccounts();
+      if(accounts.length > 0) msalAccount = accounts[0];
+    }
+  }catch(e){
+    authLine.textContent = 'เข้าสู่ระบบไม่สำเร็จ: ' + (e.errorMessage || e.message || e);
+  }
+  if(msalAccount){
+    await enterApp();
+  }
+}
+
+document.getElementById('btn-signin').addEventListener('click', ()=>{
+  msalInstance.loginRedirect({ scopes: GRAPH_SCOPES });
+});
+document.getElementById('btn-signout').addEventListener('click', ()=>{
+  if(syncTimer) clearInterval(syncTimer);
+  msalInstance.logoutRedirect();
+});
+
+async function getAccessToken(){
+  const req = { scopes: GRAPH_SCOPES, account: msalAccount };
+  try{
+    const res = await msalInstance.acquireTokenSilent(req);
+    return res.accessToken;
+  }catch(e){
+    const res = await msalInstance.acquireTokenRedirect(req); // will navigate away
+    return null;
+  }
+}
+
+async function enterApp(){
+  document.getElementById('auth-gate').classList.add('hidden');
+  document.getElementById('main-app').style.display = '';
+  document.getElementById('tabbar').style.display = '';
+  document.getElementById('user-badge').style.display = 'flex';
+  document.getElementById('user-email').textContent = msalAccount.username || msalAccount.name || 'signed in';
+  await loadState();
+  renderImportView();
+  renderRecentScans();
+  renderDashboard();
+  updateTicker();
+  renderConnectCard();
+  handleEntryHash();
+  syncTimer = setInterval(pollForChanges, 8000);
+}
+
+/* ============================================================
+   STORAGE (OneDrive app-folder, via Microsoft Graph)
+   ============================================================ */
+async function fetchDriveData(){
+  setSyncDot('syncing');
+  const token = await getAccessToken();
+  if(!token) return null;
+  const res = await fetch(`${GRAPH_ROOT}/me/drive/special/approot:/${ONEDRIVE_CONFIG.DATA_FILE}:/content`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if(res.status === 404){
+    setSyncDot('ok');
+    driveEtag = null;
+    return { baseline: [], scans: {}, sessionTag: '' };
+  }
+  if(!res.ok){ setSyncDot('err'); throw new Error('Graph read failed: ' + res.status); }
+  driveEtag = res.headers.get('ETag');
+  setSyncDot('ok');
+  return await res.json();
+}
+
+async function saveDriveData(data){
+  setSyncDot('syncing');
+  const token = await getAccessToken();
+  if(!token) return { conflict:false };
+  const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+  if(driveEtag) headers['If-Match'] = driveEtag;
+  const res = await fetch(`${GRAPH_ROOT}/me/drive/special/approot:/${ONEDRIVE_CONFIG.DATA_FILE}:/content`, {
+    method: 'PUT', headers, body: JSON.stringify(data)
+  });
+  if(res.status === 412){ setSyncDot('ok'); return { conflict:true }; }
+  if(!res.ok){ setSyncDot('err'); throw new Error('Graph write failed: ' + res.status); }
+  driveEtag = res.headers.get('ETag');
+  setSyncDot('ok');
+  return { conflict:false };
+}
+
+async function loadState(){
+  try{
+    const data = await fetchDriveData();
+    baseline = (data && data.baseline) || [];
+    scans = (data && data.scans) || {};
+    sessionTag = (data && data.sessionTag) || '';
+    if(!sessionTag){
+      sessionTag = 'S-' + new Date().toISOString().slice(0,10).replace(/-/g,'');
+      await saveDriveData({ baseline, scans, sessionTag });
+    }
+  }catch(e){
+    console.error(e);
+    showToast('ดึงข้อมูลจาก OneDrive ไม่สำเร็จ');
+    baseline = []; scans = {}; sessionTag = 'LOCAL';
+  }
+  document.getElementById('session-tag').textContent = 'SESSION ' + sessionTag;
+}
+
+async function saveBaseline(){
+  // baseline edits (import/clear) are low-frequency and single-editor in practice —
+  // just push straight over, retrying once on a conflict
+  for(let attempt=0; attempt<2; attempt++){
+    try{
+      const result = await saveDriveData({ baseline, scans, sessionTag });
+      if(!result.conflict) return;
+      const fresh = await fetchDriveData();
+      scans = fresh.scans || scans; // keep latest scans, but our baseline edit wins
+    }catch(e){ console.error(e); showToast('บันทึกข้อมูลตั้งต้นไป OneDrive ไม่สำเร็จ'); return; }
+  }
+}
+
+/* scans are edited from many phones at once, so retry with a fresh merge on conflict */
+async function saveScansMerging(mutateFn){
+  for(let attempt=0; attempt<5; attempt++){
+    try{
+      const fresh = await fetchDriveData();
+      scans = fresh.scans || {};
+      mutateFn();
+      const result = await saveDriveData({ baseline: fresh.baseline || baseline, scans, sessionTag: fresh.sessionTag || sessionTag });
+      if(!result.conflict) return;
+    }catch(e){ console.error(e); showToast('บันทึกไป OneDrive ไม่สำเร็จ ลองอีกครั้ง'); return; }
+  }
+  showToast('sync ชนกันหลายครั้ง กรุณาลองสแกนซ้ำ');
+}
+
+/* live sync: poll OneDrive periodically so multiple phones scanning
+   at once see each other's progress reflected on shared views */
+async function pollForChanges(){
+  try{
+    const data = await fetchDriveData();
+    if(!data) return;
+    if(JSON.stringify(data.scans||{}) !== JSON.stringify(scans)){
+      scans = data.scans || {};
+      renderRecentScans();
+      updateTicker();
+      if(document.getElementById('view-dashboard').classList.contains('active')) renderDashboard();
+    }
+    if(JSON.stringify(data.baseline||[]) !== JSON.stringify(baseline)){
+      baseline = data.baseline || [];
+      renderImportView();
+    }
+  }catch(e){ /* transient network errors are fine to skip */ }
+}
+
+/* ============================================================
+   TAB NAVIGATION
+   ============================================================ */
+function switchView(name){
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.view===name));
+  document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active', v.id==='view-'+name));
+  if(name === 'dashboard') renderDashboard();
+  if(name !== 'scan' && scannerRunning) stopScanner();
+}
+document.querySelectorAll('.tab-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=>switchView(btn.dataset.view));
+});
+
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(showToast._tm);
+  showToast._tm = setTimeout(()=>t.classList.remove('show'), 2200);
+}
+
+/* ============================================================
+   IMPORT VIEW
+   ============================================================ */
+function parseCSV(text){
+  const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(l=>l.length>0);
+  const rows = [];
+  for(const line of lines){
+    const parts = line.split(',').map(p=>p.trim());
+    if(parts.length < 3) continue;
+    let code, desc, lot, qty, unit;
+    if(parts.length >= 5){
+      code = parts[0]; desc = parts[1]; lot = parts[2]; qty = parts[3]; unit = parts[4];
+    } else if(parts.length === 4){
+      code = parts[0]; desc = parts[1]; lot = parts[2]; qty = parts[3]; unit = '';
+    } else {
+      code = parts[0]; desc=''; lot = parts[1]; qty = parts[2]; unit='';
+    }
+    const qn = parseFloat(qty);
+    if(code.toLowerCase()==='รหัสสินค้า' || code.toLowerCase()==='sku' || code.toLowerCase()==='code') continue; // header row
+    if(isNaN(qn)) continue;
+    rows.push({code, desc, lot, qty:qn, unit: unit||''});
+  }
+  return rows;
+}
+
+function loadBaselineRows(rows, replace=true){
+  if(rows.length===0){ showToast('ไม่พบข้อมูลที่ถูกต้องในข้อความที่วาง'); return; }
+  baseline = replace ? rows : baseline.concat(rows);
+  selectedKeys = new Set();
+  saveBaseline();
+  renderImportView();
+  showToast(`นำเข้าข้อมูลสำเร็จ ${rows.length} รายการ`);
+}
+
+document.getElementById('btn-parse-csv').addEventListener('click', ()=>{
+  const text = document.getElementById('csv-input').value;
+  loadBaselineRows(parseCSV(text), true);
+});
+
+document.getElementById('btn-sample').addEventListener('click', ()=>{
+  const sample = [
+    {code:'SKU-001', desc:'น้ำมันพืชตราถั่วทอง 1L', lot:'LOT240601', qty:120, unit:'ขวด'},
+    {code:'SKU-002', desc:'ซอสมะเขือเทศ 200g', lot:'LOT240602', qty:80, unit:'ขวด'},
+    {code:'SKU-002', desc:'ซอสมะเขือเทศ 200g', lot:'LOT240715', qty:40, unit:'ขวด'},
+    {code:'SKU-003', desc:'บะหมี่กึ่งสำเร็จรูป', lot:'LOT240603', qty:300, unit:'ซอง'},
+    {code:'SKU-004', desc:'น้ำปลาแท้ 700ml', lot:'LOT240604', qty:60, unit:'ขวด'},
+    {code:'SKU-005', desc:'น้ำตาลทราย 1kg', lot:'LOT240605', qty:150, unit:'ถุง'},
+  ];
+  document.getElementById('csv-input').value = sample.map(r=>`${r.code},${r.desc},${r.lot},${r.qty},${r.unit}`).join('\n');
+  loadBaselineRows(sample, true);
+});
+
+document.getElementById('file-csv').addEventListener('change', (e)=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev)=>{
+    document.getElementById('csv-input').value = ev.target.result;
+    loadBaselineRows(parseCSV(ev.target.result), true);
+  };
+  reader.readAsText(file, 'utf-8');
+});
+
+document.getElementById('btn-clear-baseline').addEventListener('click', ()=>{
+  if(confirm('ล้างข้อมูลตั้งต้นทั้งหมด? การตรวจนับที่บันทึกไว้จะไม่ถูกลบ')){
+    baseline = [];
+    selectedKeys = new Set();
+    saveBaseline();
+    renderImportView();
+    showToast('ล้างข้อมูลตั้งต้นแล้ว');
+  }
+});
+
+function escapeHtml(s){
+  return (s||'').toString().replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+/* ---- printing (selection / single / all) ---- */
+function buildScanUrl(code, lot){
+  // full clickable link back into this app; opening it (from any camera app)
+  // jumps straight to the quantity-entry screen for this exact item
+  const base = window.location.href.split('#')[0];
+  return `${base}#s?c=${encodeURIComponent(code)}&l=${encodeURIComponent(lot)}`;
+}
+
+function printQRCodes(items){
+  if(!items || items.length===0){ showToast('ไม่มีรายการที่เลือกไว้'); return; }
+  const grid = document.getElementById('print-grid');
+  grid.innerHTML = '';
+  items.forEach(item=>{
+    const cell = document.createElement('div');
+    cell.className = 'print-item';
+    const qrDiv = document.createElement('div');
+    cell.appendChild(qrDiv);
+    const label = document.createElement('div');
+    label.innerHTML = `<div class="qcode">${escapeHtml(item.code)}</div><div class="qlot">${escapeHtml(item.lot)}${item.desc?' · '+escapeHtml(item.desc):''}${item.unit?' · '+escapeHtml(item.unit):''}</div>`;
+    cell.appendChild(label);
+    grid.appendChild(cell);
+    new QRCode(qrDiv, { text: buildScanUrl(item.code, item.lot), width:100, height:100, correctLevel: QRCode.CorrectLevel.M });
+  });
+  setTimeout(()=>window.print(), 300);
+}
+document.getElementById('btn-print-all').addEventListener('click', ()=>printQRCodes(baseline));
+document.getElementById('btn-print-selected').addEventListener('click', ()=>{
+  const items = baseline.filter(it=>selectedKeys.has(keyOf(it.code, it.lot)));
+  printQRCodes(items);
+});
+document.getElementById('ctx-print').addEventListener('click', ()=>{
+  if(ctxTargetItem) printQRCodes([ctxTargetItem]);
+  hideCtxMenu();
+});
+
+function hideCtxMenu(){ document.getElementById('ctx-menu').style.display = 'none'; ctxTargetItem = null; }
+document.addEventListener('click', (e)=>{
+  if(!e.target.closest('#ctx-menu')) hideCtxMenu();
+});
+document.addEventListener('scroll', hideCtxMenu, true);
+
+function updateSelectionUI(){
+  document.getElementById('sel-count').textContent = selectedKeys.size;
+  document.getElementById('btn-print-selected').disabled = selectedKeys.size===0;
+  document.getElementById('chk-all').checked = baseline.length>0 && selectedKeys.size===baseline.length;
+}
+
+document.getElementById('chk-all').addEventListener('change', (e)=>{
+  if(e.target.checked){ baseline.forEach(it=>selectedKeys.add(keyOf(it.code,it.lot))); }
+  else { selectedKeys.clear(); }
+  renderBaselineTable();
+});
+
+function renderBaselineTable(){
+  const body = document.getElementById('baseline-table-body');
+  body.innerHTML = '';
+  baseline.slice(0,300).forEach(item=>{
+    const k = keyOf(item.code, item.lot);
+    const tr = document.createElement('tr');
+    tr.className = 'row-selectable';
+    tr.innerHTML = `
+      <td class="chk-cell"><input type="checkbox" data-k="${escapeHtml(k)}" ${selectedKeys.has(k)?'checked':''}></td>
+      <td class="mono">${escapeHtml(item.code)}</td>
+      <td>${escapeHtml(item.desc||'—')}</td>
+      <td class="mono">${escapeHtml(item.lot)}</td>
+      <td style="text-align:right;" class="mono">${item.qty.toLocaleString()}</td>
+      <td>${escapeHtml(item.unit||'—')}</td>`;
+    tr.querySelector('input[type=checkbox]').addEventListener('change', (e)=>{
+      if(e.target.checked) selectedKeys.add(k); else selectedKeys.delete(k);
+      updateSelectionUI();
+    });
+    tr.addEventListener('contextmenu', (e)=>{
+      e.preventDefault();
+      ctxTargetItem = item;
+      const menu = document.getElementById('ctx-menu');
+      document.getElementById('ctx-hint').textContent = `${item.code} · LOT ${item.lot||'—'}`;
+      menu.style.display = 'block';
+      const mw = 200, mh = 90;
+      let x = e.clientX, y = e.clientY;
+      if(x + mw > window.innerWidth) x = window.innerWidth - mw - 8;
+      if(y + mh > window.innerHeight) y = window.innerHeight - mh - 8;
+      menu.style.left = x + 'px';
+      menu.style.top = y + 'px';
+    });
+    body.appendChild(tr);
+  });
+  updateSelectionUI();
+}
+
+function renderImportView(){
+  const skuCount = baseline.length;
+  const qtySum = baseline.reduce((a,b)=>a+b.qty,0);
+  document.getElementById('stat-sku').textContent = skuCount.toLocaleString();
+  document.getElementById('stat-qty').textContent = qtySum.toLocaleString();
+  document.getElementById('stat-imported-at').textContent = skuCount ? 'พร้อมใช้งาน' : '—';
+
+  renderBaselineTable();
+
+  document.getElementById('baseline-preview-card').style.display = skuCount ? 'block' : 'none';
+  document.getElementById('import-empty').style.display = skuCount ? 'none' : 'block';
+
+  updateTicker();
+}
+
+/* ============================================================
+   CONNECT-PHONE CARD
+   ============================================================ */
+function renderConnectCard(){
+  const url = window.location.href.split('#')[0] + '#scan';
+  document.getElementById('connect-link').textContent = url;
+  const qrBox = document.getElementById('connect-qr');
+  qrBox.innerHTML = '';
+  try{
+    new QRCode(qrBox, { text:url, width:96, height:96, correctLevel: QRCode.CorrectLevel.M });
+  }catch(e){}
+}
+document.getElementById('btn-copy-link').addEventListener('click', async ()=>{
+  const url = window.location.href.split('#')[0] + '#scan';
+  try{
+    await navigator.clipboard.writeText(url);
+    showToast('คัดลอกลิงก์แล้ว');
+  }catch(e){
+    showToast('คัดลอกไม่สำเร็จ กรุณาคัดลอกจากช่องข้อความ');
+  }
+});
+
+/* ============================================================
+   SCAN VIEW
+   ============================================================ */
+function findBaselineItem(code, lot){
+  return baseline.find(b => b.code.trim().toUpperCase()===code.trim().toUpperCase() && b.lot.trim().toUpperCase()===lot.trim().toUpperCase());
+}
+
+document.getElementById('btn-start-scan').addEventListener('click', startScanner);
+document.getElementById('btn-stop-scan').addEventListener('click', stopScanner);
+
+function startScanner(){
+  if(scannerRunning) return;
+  if(baseline.length===0){
+    showToast('กรุณานำเข้าข้อมูลตั้งต้นก่อนเริ่มสแกน');
+    return;
+  }
+  document.getElementById('scan-placeholder').style.display = 'none';
+  html5QrCode = new Html5Qrcode("qr-reader");
+  html5QrCode.start(
+    { facingMode: "environment" },
+    { fps: 10, qrbox: { width: 230, height: 230 } },
+    onScanSuccess,
+    ()=>{}
+  ).then(()=>{
+    scannerRunning = true;
+    document.getElementById('btn-start-scan').style.display = 'none';
+    document.getElementById('btn-stop-scan').style.display = 'inline-flex';
+  }).catch(err=>{
+    document.getElementById('scan-placeholder').style.display = 'block';
+    document.getElementById('scan-placeholder').innerHTML = '<div class="glyph">⚠</div>ไม่สามารถเปิดกล้องได้<br>กรุณาอนุญาตการใช้กล้อง หรือใช้การป้อนด้วยตนเอง';
+    showToast('เปิดกล้องไม่สำเร็จ: ' + err);
+  });
+}
+
+function stopScanner(){
+  if(html5QrCode && scannerRunning){
+    html5QrCode.stop().then(()=>{
+      html5QrCode.clear();
+      scannerRunning = false;
+      document.getElementById('btn-start-scan').style.display = 'inline-flex';
+      document.getElementById('btn-stop-scan').style.display = 'none';
+      document.getElementById('scan-placeholder').style.display = 'block';
+    }).catch(()=>{});
+  }
+}
+
+/* parses the "#s?c=...&l=..." hash fragment used by printed QR links */
+function parseHashPayload(hash){
+  if(!hash) return null;
+  const h = hash.replace(/^#/,'');
+  if(h.startsWith('s?')){
+    const params = new URLSearchParams(h.slice(2));
+    const c = params.get('c') || '';
+    const l = params.get('l') || '';
+    if(c) return {code:c, lot:l};
+  }
+  return null;
+}
+
+/* understands: (1) new link format e.g. https://.../app.html#s?c=XXX&l=YYY
+   (2) legacy raw JSON {"c":"...","l":"..."} from older printed labels
+   (3) legacy pipe format CODE|LOT */
+function extractCodeLot(decodedText){
+  let code='', lot='';
+  const text = (decodedText||'').trim();
+  try{
+    const obj = JSON.parse(text);
+    code = obj.c || obj.code || '';
+    lot = obj.l || obj.lot || '';
+    if(code) return {code, lot};
+  }catch(e){}
+  try{
+    const url = new URL(text);
+    const payload = parseHashPayload(url.hash);
+    if(payload) return payload;
+  }catch(e){}
+  const parts = text.split('|');
+  code = (parts[0]||'').trim();
+  lot = (parts[1]||'').trim();
+  return {code, lot};
+}
+
+let lastScanTime = 0;
+function onScanSuccess(decodedText){
+  const now = Date.now();
+  if(modalOpen || now - lastScanTime < 800) return;
+  lastScanTime = now;
+  const {code, lot} = extractCodeLot(decodedText);
+  if(!code){ showToast('อ่าน QR ไม่สำเร็จ รูปแบบไม่ถูกต้อง'); return; }
+  if(navigator.vibrate) navigator.vibrate(60);
+  openScanModal(code, lot);
+}
+
+function openScanModal(code, lot){
+  modalOpen = true;
+  const item = findBaselineItem(code, lot);
+  document.getElementById('m-code').textContent = code;
+  document.getElementById('m-lot').textContent = lot ? 'LOT ' + lot : 'ไม่มี Lot';
+  document.getElementById('m-desc').textContent = item ? (item.desc||'') : '';
+  document.getElementById('m-baseline-qty').textContent = item ? item.qty.toLocaleString() + (item.unit?(' '+item.unit):'') : '—';
+  document.getElementById('m-unit-label').textContent = item && item.unit ? ('หน่วย: ' + item.unit) : '';
+
+  const noteWrap = document.getElementById('m-note-wrap');
+  noteWrap.innerHTML = item ? '' : '<div class="modal-note">⚠ ไม่พบรหัสนี้ในข้อมูลตั้งต้น — จะถูกบันทึกเป็น "พบสินค้านอกระบบ"</div>';
+
+  const k = keyOf(code, lot);
+  const existing = scans[k];
+  document.getElementById('m-already-wrap').style.display = existing ? 'flex' : 'none';
+  document.getElementById('m-already-qty').textContent = existing ? existing.qty.toLocaleString() : '0';
+
+  document.getElementById('m-qty').value = 1;
+  document.getElementById('modal-scan').classList.remove('hidden');
+  document.getElementById('modal-scan').dataset.code = code;
+  document.getElementById('modal-scan').dataset.lot = lot;
+}
+
+function closeScanModal(){
+  modalOpen = false;
+  document.getElementById('modal-scan').classList.add('hidden');
+}
+document.getElementById('m-close').addEventListener('click', closeScanModal);
+document.getElementById('m-cancel').addEventListener('click', closeScanModal);
+document.getElementById('m-minus').addEventListener('click', ()=>{
+  const el = document.getElementById('m-qty');
+  el.value = Math.max(0, (parseInt(el.value)||0) - 1);
+});
+document.getElementById('m-plus').addEventListener('click', ()=>{
+  const el = document.getElementById('m-qty');
+  el.value = (parseInt(el.value)||0) + 1;
+});
+document.getElementById('m-save').addEventListener('click', ()=>{
+  const modal = document.getElementById('modal-scan');
+  const code = modal.dataset.code, lot = modal.dataset.lot;
+  const qty = parseInt(document.getElementById('m-qty').value) || 0;
+  recordScan(code, lot, qty);
+  closeScanModal();
+  showToast(`บันทึก ${code} จำนวน ${qty} เข้าระบบแล้ว`);
+});
+
+async function recordScan(code, lot, qty){
+  const k = keyOf(code, lot);
+  await saveScansMerging(()=>{
+    if(!scans[k]){
+      scans[k] = {code, lot, qty:0, history:[]};
+    }
+    scans[k].qty += qty;
+    scans[k].history.push({qty, time: new Date().toISOString()});
+  });
+  renderRecentScans();
+  updateTicker();
+}
+
+function renderRecentScans(){
+  const list = document.getElementById('recent-scans-list');
+  const entries = Object.values(scans).sort((a,b)=>{
+    const ta = a.history.length ? a.history[a.history.length-1].time : '';
+    const tb = b.history.length ? b.history[b.history.length-1].time : '';
+    return tb.localeCompare(ta);
+  }).slice(0,12);
+  list.innerHTML = '';
+  entries.forEach(e=>{
+    const row = document.createElement('div');
+    row.className = 'scan-row';
+    row.innerHTML = `<div class="meta"><span class="code">${escapeHtml(e.code)}</span><span class="lot">LOT ${escapeHtml(e.lot||'—')}</span></div><div class="qty">${e.qty.toLocaleString()}</div>`;
+    list.appendChild(row);
+  });
+  document.getElementById('scan-empty').style.display = entries.length ? 'none' : 'block';
+}
+
+/* ---- manual entry ---- */
+document.getElementById('btn-manual-entry').addEventListener('click', ()=>{
+  document.getElementById('man-code').value = '';
+  document.getElementById('man-lot').value = '';
+  document.getElementById('man-qty').value = 1;
+  document.getElementById('modal-manual').classList.remove('hidden');
+});
+document.getElementById('man-close').addEventListener('click', ()=>document.getElementById('modal-manual').classList.add('hidden'));
+document.getElementById('man-cancel').addEventListener('click', ()=>document.getElementById('modal-manual').classList.add('hidden'));
+document.getElementById('man-minus').addEventListener('click', ()=>{
+  const el = document.getElementById('man-qty');
+  el.value = Math.max(0, (parseInt(el.value)||0) - 1);
+});
+document.getElementById('man-plus').addEventListener('click', ()=>{
+  const el = document.getElementById('man-qty');
+  el.value = (parseInt(el.value)||0) + 1;
+});
+document.getElementById('man-save').addEventListener('click', ()=>{
+  const code = document.getElementById('man-code').value.trim();
+  const lot = document.getElementById('man-lot').value.trim();
+  const qty = parseInt(document.getElementById('man-qty').value) || 0;
+  if(!code){ showToast('กรุณาระบุรหัสสินค้า'); return; }
+  recordScan(code, lot, qty);
+  document.getElementById('modal-manual').classList.add('hidden');
+  showToast(`บันทึก ${code} จำนวน ${qty}`);
+});
+
+/* ============================================================
+   DASHBOARD
+   ============================================================ */
+function computeComparison(){
+  const rows = [];
+  const matchedKeys = new Set();
+  baseline.forEach(item=>{
+    const k = keyOf(item.code, item.lot);
+    matchedKeys.add(k);
+    const s = scans[k];
+    const counted = s ? s.qty : 0;
+    const diff = counted - item.qty;
+    let status;
+    if(!s) status = 'notfound';
+    else if(diff === 0) status = 'ok';
+    else if(diff > 0) status = 'excess';
+    else status = 'shortage';
+    rows.push({code:item.code, desc:item.desc, lot:item.lot, unit:item.unit||'', baselineQty:item.qty, countedQty:counted, diff, status});
+  });
+  Object.values(scans).forEach(s=>{
+    const k = keyOf(s.code, s.lot);
+    if(!matchedKeys.has(k)){
+      rows.push({code:s.code, desc:'', lot:s.lot, unit:'', baselineQty:0, countedQty:s.qty, diff:s.qty, status:'extra'});
+    }
+  });
+  return rows;
+}
+
+function renderDashboard(){
+  const rows = computeComparison();
+  const counts = {all:rows.length, ok:0, excess:0, shortage:0, notfound:0, extra:0};
+  rows.forEach(r=>counts[r.status]++);
+  document.getElementById('dc-all').textContent = counts.all;
+  document.getElementById('dc-ok').textContent = counts.ok;
+  document.getElementById('dc-excess').textContent = counts.excess;
+  document.getElementById('dc-shortage').textContent = counts.shortage;
+  document.getElementById('dc-notfound').textContent = counts.notfound;
+  document.getElementById('dc-extra').textContent = counts.extra;
+
+  document.querySelectorAll('.dash-card').forEach(c=>c.classList.toggle('selected', c.dataset.filter===currentDashFilter));
+
+  const search = document.getElementById('dash-search').value.trim().toUpperCase();
+  let filtered = currentDashFilter==='all' ? rows : rows.filter(r=>r.status===currentDashFilter);
+  if(search) filtered = filtered.filter(r=> r.code.toUpperCase().includes(search) || (r.lot||'').toUpperCase().includes(search));
+
+  const body = document.getElementById('dash-table-body');
+  body.innerHTML = '';
+  const statusMeta = {
+    ok:{cls:'pill-ok', label:'ตรงกัน'},
+    excess:{cls:'pill-excess', label:'เกิน'},
+    shortage:{cls:'pill-shortage', label:'ขาด'},
+    notfound:{cls:'pill-notfound', label:'ไม่พบ'},
+    extra:{cls:'pill-extra', label:'นอกระบบ'},
+  };
+  filtered.forEach(r=>{
+    const m = statusMeta[r.status];
+    const diffStr = r.diff>0 ? '+'+r.diff.toLocaleString() : r.diff.toLocaleString();
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td class="mono">${escapeHtml(r.code)}</td><td class="mono">${escapeHtml(r.lot||'—')}</td><td>${escapeHtml(r.unit||'—')}</td>
+      <td style="text-align:right;" class="mono">${r.baselineQty.toLocaleString()}</td>
+      <td style="text-align:right;" class="mono">${r.countedQty.toLocaleString()}</td>
+      <td style="text-align:right;" class="mono">${diffStr}</td>
+      <td><span class="pill ${m.cls}">${m.label}</span></td>`;
+    body.appendChild(tr);
+  });
+  document.getElementById('dash-empty').style.display = filtered.length ? 'none' : 'block';
+}
+
+document.querySelectorAll('.dash-card').forEach(card=>{
+  card.addEventListener('click', ()=>{
+    currentDashFilter = card.dataset.filter;
+    renderDashboard();
+  });
+});
+document.getElementById('dash-search').addEventListener('input', renderDashboard);
+
+document.getElementById('btn-reset-count').addEventListener('click', ()=>{
+  if(confirm('ล้างข้อมูลการตรวจนับทั้งหมด? ข้อมูลตั้งต้นจะยังคงอยู่')){
+    scans = {};
+    saveBaseline(); // pushes current baseline + (now-empty) scans to OneDrive
+    renderRecentScans();
+    renderDashboard();
+    updateTicker();
+    showToast('รีเซ็ตการตรวจนับแล้ว');
+  }
+});
+
+/* ---- excel export ---- */
+document.getElementById('btn-export-excel').addEventListener('click', ()=>{
+  const rows = computeComparison();
+  const statusLabel = {ok:'ตรงกัน', excess:'เกิน', shortage:'ขาด', notfound:'ไม่พบ', extra:'พบนอกระบบ'};
+  const detailData = rows.map(r=>({
+    'รหัสสินค้า': r.code,
+    'ชื่อสินค้า': r.desc||'',
+    'Lot': r.lot||'',
+    'หน่วย': r.unit||'',
+    'จำนวนตามระบบ': r.baselineQty,
+    'จำนวนที่นับได้': r.countedQty,
+    'ผลต่าง': r.diff,
+    'สถานะ': statusLabel[r.status],
+  }));
+  const counts = {ok:0, excess:0, shortage:0, notfound:0, extra:0};
+  rows.forEach(r=>counts[r.status]++);
+  const summaryData = [
+    {'รายการ':'จำนวน SKU x Lot ทั้งหมด', 'จำนวน': rows.length},
+    {'รายการ':'ตรงกัน', 'จำนวน': counts.ok},
+    {'รายการ':'เกิน', 'จำนวน': counts.excess},
+    {'รายการ':'ขาด', 'จำนวน': counts.shortage},
+    {'รายการ':'ไม่พบ (ไม่ถูกนับ)', 'จำนวน': counts.notfound},
+    {'รายการ':'พบสินค้านอกระบบ', 'จำนวน': counts.extra},
+  ];
+
+  const wb = XLSX.utils.book_new();
+  const wsSummary = XLSX.utils.json_to_sheet(summaryData);
+  wsSummary['!cols'] = [{wch:32},{wch:12}];
+  XLSX.utils.book_append_sheet(wb, wsSummary, 'สรุปผล');
+
+  const wsDetail = XLSX.utils.json_to_sheet(detailData);
+  wsDetail['!cols'] = [{wch:14},{wch:26},{wch:16},{wch:10},{wch:14},{wch:14},{wch:10},{wch:14}];
+  XLSX.utils.book_append_sheet(wb, wsDetail, 'รายละเอียด');
+
+  ['excess','shortage','notfound','extra'].forEach(st=>{
+    const subset = detailData.filter(d=>d['สถานะ']===statusLabel[st]);
+    if(subset.length){
+      const ws = XLSX.utils.json_to_sheet(subset);
+      ws['!cols'] = [{wch:14},{wch:26},{wch:16},{wch:10},{wch:14},{wch:14},{wch:10},{wch:14}];
+      XLSX.utils.book_append_sheet(wb, ws, statusLabel[st]);
+    }
+  });
+
+  const now = new Date();
+  const stamp = now.toISOString().slice(0,10).replace(/-/g,'') + '-' + String(now.getHours()).padStart(2,'0') + String(now.getMinutes()).padStart(2,'0');
+  XLSX.writeFile(wb, `stock-count-${stamp}.xlsx`);
+  showToast('ส่งออกไฟล์ Excel แล้ว');
+});
+
+/* ============================================================
+   TICKER
+   ============================================================ */
+function updateTicker(){
+  const total = baseline.length;
+  const countedKeys = new Set(baseline.map(b=>keyOf(b.code,b.lot)).filter(k=>scans[k]));
+  const counted = countedKeys.size;
+  const pct = total ? Math.round((counted/total)*100) : 0;
+  document.getElementById('ticker-counted').textContent = counted;
+  document.getElementById('ticker-total').textContent = total;
+  document.getElementById('ticker-pct').textContent = pct + '%';
+  document.getElementById('coverage-fill').style.width = pct + '%';
+}
+
+/* handles jumping straight to the right screen when opened from a printed
+   QR label (#s?c=...&l=...) or the "connect phone" QR (#scan). Runs once
+   the user is signed in and baseline/scans are loaded. */
+function handleEntryHash(){
+  const labelPayload = parseHashPayload(window.location.hash);
+  if(labelPayload){
+    switchView('scan');
+    history.replaceState(null, '', window.location.pathname + window.location.search); // clear hash so refresh doesn't reopen
+    setTimeout(()=>openScanModal(labelPayload.code, labelPayload.lot), 200);
+  }
+  else if(window.location.hash === '#scan'){
+    switchView('scan');
+    setTimeout(()=>{ if(baseline.length>0) startScanner(); }, 600);
+  }
+}
+
+/* ============================================================
+   INIT
+   ============================================================ */
+(async function init(){
+  initMsal();
+  await handleAuthOnLoad(); // shows the sign-in card if not authenticated yet;
+                             // calls enterApp() (which loads data + wires up the hash) once signed in
+})();
+</script>
+</body>
+</html>
