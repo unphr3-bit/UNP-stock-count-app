@@ -705,20 +705,26 @@ let ctxTargetItem = null;
 function keyOf(code, lot){ return (code||'').trim().toUpperCase() + '||' + (lot||'').trim().toUpperCase(); }
 
 /* ============================================================
-   ONEDRIVE CONFIG
+   ONEDRIVE / SHAREPOINT CONFIG
    ============================================================ */
 const ONEDRIVE_CONFIG = {
   CLIENT_ID: 'a732b403-4607-40c4-b121-d926bdb206d1',
   TENANT_ID: '730ecd6a-b4b3-4815-92e3-b81c967e499d',
-  DATA_FILE: 'stockcount-data.json',
+  DATA_FILE: 'Warehouse Database/stockcount-data.json',
+  // shared SharePoint site all team members already have access to —
+  // this is what makes data visible across everyone's own individual login,
+  // instead of each person's private OneDrive app folder
+  SITE_HOSTNAME: 'uniquepolymer.sharepoint.com',
+  SITE_PATH: '/sites/UniquePolymerCo.Ltd',
 };
 const GRAPH_ROOT = 'https://graph.microsoft.com/v1.0';
-const GRAPH_SCOPES = ['User.Read', 'Files.ReadWrite.AppFolder'];
+const GRAPH_SCOPES = ['User.Read', 'Files.ReadWrite.All'];
 
 let msalInstance = null;
 let msalAccount = null;
 let driveEtag = null;
 let syncTimer = null;
+let sharedDriveId = null; // resolved once per session from the SharePoint site
 
 function setSyncDot(state){
   const dot = document.getElementById('sync-dot');
@@ -794,13 +800,33 @@ async function enterApp(){
 }
 
 /* ============================================================
-   STORAGE (OneDrive app-folder, via Microsoft Graph)
+   STORAGE — shared file on the company SharePoint site, via Microsoft Graph.
+   Every signed-in user (any account with access to the site) reads/writes
+   the SAME file here, so data is visible across everyone regardless of
+   which individual account they logged in with.
    ============================================================ */
+async function resolveSharedDriveId(token){
+  if(sharedDriveId) return sharedDriveId;
+  const siteRes = await fetch(`${GRAPH_ROOT}/sites/${ONEDRIVE_CONFIG.SITE_HOSTNAME}:${ONEDRIVE_CONFIG.SITE_PATH}`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if(!siteRes.ok) throw new Error('Graph site lookup failed: ' + siteRes.status);
+  const site = await siteRes.json();
+  const driveRes = await fetch(`${GRAPH_ROOT}/sites/${site.id}/drive`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if(!driveRes.ok) throw new Error('Graph drive lookup failed: ' + driveRes.status);
+  const drive = await driveRes.json();
+  sharedDriveId = drive.id;
+  return sharedDriveId;
+}
+
 async function fetchDriveData(){
   setSyncDot('syncing');
   const token = await getAccessToken();
   if(!token) return null;
-  const res = await fetch(`${GRAPH_ROOT}/me/drive/special/approot:/${ONEDRIVE_CONFIG.DATA_FILE}:/content`, {
+  const driveId = await resolveSharedDriveId(token);
+  const res = await fetch(`${GRAPH_ROOT}/drives/${driveId}/root:/${ONEDRIVE_CONFIG.DATA_FILE}:/content`, {
     headers: { Authorization: `Bearer ${token}` }
   });
   if(res.status === 404){
@@ -818,9 +844,10 @@ async function saveDriveData(data){
   setSyncDot('syncing');
   const token = await getAccessToken();
   if(!token) return { conflict:false };
+  const driveId = await resolveSharedDriveId(token);
   const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
   if(driveEtag) headers['If-Match'] = driveEtag;
-  const res = await fetch(`${GRAPH_ROOT}/me/drive/special/approot:/${ONEDRIVE_CONFIG.DATA_FILE}:/content`, {
+  const res = await fetch(`${GRAPH_ROOT}/drives/${driveId}/root:/${ONEDRIVE_CONFIG.DATA_FILE}:/content`, {
     method: 'PUT', headers, body: JSON.stringify(data)
   });
   if(res.status === 412){ setSyncDot('ok'); return { conflict:true }; }
@@ -1440,7 +1467,7 @@ async function recordScan(code, lot, qty){
       scans[k] = {code, lot, qty:0, history:[]};
     }
     scans[k].qty += qty;
-    scans[k].history.push({qty, time: new Date().toISOString()});
+    scans[k].history.push({qty, time: new Date().toISOString(), by: (msalAccount && msalAccount.username) || ''});
   });
   renderRecentScans();
   updateTicker();
@@ -1457,7 +1484,8 @@ function renderRecentScans(){
   entries.forEach(e=>{
     const row = document.createElement('div');
     row.className = 'scan-row';
-    row.innerHTML = `<div class="meta"><span class="code">${escapeHtml(e.code)}</span><span class="lot">LOT ${escapeHtml(e.lot||'—')}</span></div><div class="qty">${e.qty.toLocaleString()}</div>`;
+    const lastBy = e.history.length ? (e.history[e.history.length-1].by || '') : '';
+    row.innerHTML = `<div class="meta"><span class="code">${escapeHtml(e.code)}</span><span class="lot">LOT ${escapeHtml(e.lot||'—')}</span>${lastBy ? `<span class="lot" style="opacity:.7;">โดย ${escapeHtml(lastBy)}</span>` : ''}</div><div class="qty">${e.qty.toLocaleString()}</div>`;
     list.appendChild(row);
   });
   document.getElementById('scan-empty').style.display = entries.length ? 'none' : 'block';
