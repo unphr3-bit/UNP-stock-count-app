@@ -358,14 +358,31 @@
   .ctx-menu .ctx-hint{padding:6px 10px 4px;font-size:11px;color:var(--text-faint);border-bottom:1px solid var(--border);margin-bottom:4px;}
 
   #print-area{display:none;}
+  #fulllabel-print-area{display:none;}
   @media print{
     body *{visibility:hidden;}
-    #print-area, #print-area *{visibility:visible;}
-    #print-area{display:block !important;position:absolute;top:0;left:0;width:100%;padding:14px;}
+    body.printing-grid #print-area, body.printing-grid #print-area *{visibility:visible;}
+    body.printing-grid #print-area{display:block !important;position:absolute;top:0;left:0;width:100%;padding:14px;}
+    body.printing-fulllabel #fulllabel-print-area, body.printing-fulllabel #fulllabel-print-area *{visibility:visible;}
+    body.printing-fulllabel #fulllabel-print-area{display:block !important;position:absolute;top:0;left:0;width:100%;}
     .print-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
     .print-item{border:1px dashed #999;border-radius:6px;padding:8px;text-align:center;break-inside:avoid;}
     .print-item .qcode{font-family:var(--font-mono);font-size:11px;margin-top:6px;font-weight:700;}
     .print-item .qlot{font-family:var(--font-mono);font-size:9.5px;color:#555;}
+  }
+
+  /* ---------- full label (no-QR pallet tag) — absolute-positioned 1:1 replica of source Excel forms ---------- */
+  .fl-canvas{position:relative;width:595.3pt;height:841.89pt;margin:0 auto;background:#fff;
+    font-family:'Cordia New','TH Sarabun New',Tahoma,Arial,sans-serif;color:#000;overflow:hidden;
+    page-break-after:always;}
+  .fl-canvas:last-child{page-break-after:auto;}
+  .fl-abs{position:absolute;}
+  .fl-line-h{position:absolute;height:1pt;background:#000;}
+  .fl-line-v{position:absolute;width:1pt;background:#000;}
+  .fl-center{display:flex;align-items:center;justify-content:center;text-align:center;}
+  .fl-center > .fl-inner{width:100%;}
+  @media print{
+    @page{size:A4;margin:0;}
   }
 </style>
 </head>
@@ -438,6 +455,7 @@
       <div class="btn-row" style="margin-bottom:12px;">
         <button class="btn btn-outline btn-sm" id="btn-print-selected" disabled>🖨 พิมพ์ QR ที่เลือก (<span id="sel-count">0</span>)</button>
         <button class="btn btn-ghost btn-sm" id="btn-print-all">พิมพ์ QR ทั้งหมด</button>
+        <button class="btn btn-outline btn-sm" id="btn-print-fulllabel-selected" disabled>🏷 พิมพ์ป้ายเต็ม (ไม่มี QR) (<span id="sel-count-fl">0</span>)</button>
         <button class="btn btn-ghost btn-danger-ghost btn-sm" id="btn-clear-baseline">ล้างข้อมูลตั้งต้น</button>
       </div>
       <div class="table-scroll">
@@ -627,12 +645,48 @@
 <div class="ctx-menu" id="ctx-menu">
   <div class="ctx-hint" id="ctx-hint">รายการ</div>
   <button id="ctx-print">🖨 พิมพ์ QR รายการนี้</button>
+  <button id="ctx-print-fulllabel">🏷 พิมพ์ป้ายเต็ม (ไม่มี QR)</button>
 </div>
 
 <div id="print-area">
   <h3>ป้ายฉลาก QR Code สำหรับตรวจนับ</h3>
   <div class="print-grid" id="print-grid"></div>
 </div>
+
+<!-- FULL LABEL (NO-QR PALLET) PRINT MODAL -->
+<div class="modal-overlay hidden" id="modal-fulllabel">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-head">
+      <div class="modal-code">พิมพ์ป้ายเต็ม (สำหรับพาเลทที่ไม่มี QR)</div>
+      <button class="close-x" id="fl-close">✕</button>
+    </div>
+    <div class="modal-desc" id="fl-item-hint" style="margin-bottom:14px;"></div>
+
+    <label class="field-label">รูปแบบป้าย</label>
+    <select id="fl-type" style="margin-bottom:12px;">
+      <option value="finished">ใบกำกับสินค้า (Finished Goods Tag) — สินค้าสำเร็จรูป/พาเลท</option>
+      <option value="incoming">ใบรับเข้าวัตถุดิบ (Incoming Tag) — วัตถุดิบรับเข้า</option>
+    </select>
+
+    <label class="field-label" id="fl-date-label">วันที่ผลิต (MFG)</label>
+    <input type="date" id="fl-date" style="margin-bottom:12px;">
+
+    <div id="fl-pallet-wrap" style="display:none;">
+      <label class="field-label">จำนวนพาเลท (เช่น 1/4)</label>
+      <input type="text" id="fl-pallet" placeholder="1/1" style="margin-bottom:12px;">
+    </div>
+
+    <div class="modal-note" style="background:var(--accent-soft);color:var(--accent);">QR บนป้ายนี้ใช้รูปแบบเดียวกับ QR อื่น ๆ ในระบบ สแกนแล้วเปิดหน้ากรอกจำนวนได้ทันที</div>
+
+    <div class="btn-row">
+      <button class="btn btn-outline btn-block" id="fl-cancel">ยกเลิก</button>
+      <button class="btn btn-primary btn-block" id="fl-print">🖨 พิมพ์</button>
+    </div>
+  </div>
+</div>
+
+<div id="fulllabel-print-area"></div>
 
 <script>
 /* ============================================================
@@ -651,12 +705,12 @@ let ctxTargetItem = null;
 function keyOf(code, lot){ return (code||'').trim().toUpperCase() + '||' + (lot||'').trim().toUpperCase(); }
 
 /* ============================================================
-   ONEDRIVE CONFIG — fill these in from your Azure App Registration
+   ONEDRIVE CONFIG
    ============================================================ */
 const ONEDRIVE_CONFIG = {
-  CLIENT_ID: 'a732b403-4607-40c4-b121-d926bdb206d1',          // Application (client) ID from Azure Portal
-  TENANT_ID: 'organizations',                 // your org's Directory (tenant) ID, or leave as 'organizations' for any work/school account
-  DATA_FILE: 'stockcount-data.json',           // filename stored in the app's OneDrive folder
+  CLIENT_ID: 'a732b403-4607-40c4-b121-d926bdb206d1',
+  TENANT_ID: '730ecd6a-b4b3-4815-92e3-b81c967e499d',
+  DATA_FILE: 'stockcount-data.json',
 };
 const GRAPH_ROOT = 'https://graph.microsoft.com/v1.0';
 const GRAPH_SCOPES = ['User.Read', 'Files.ReadWrite.AppFolder'];
@@ -667,7 +721,6 @@ let driveEtag = null;
 let syncTimer = null;
 
 function setSyncDot(state){
-  // state: 'ok' | 'syncing' | 'err'
   const dot = document.getElementById('sync-dot');
   if(!dot) return;
   dot.className = 'dot' + (state==='syncing' ? ' syncing' : state==='err' ? ' err' : '');
@@ -719,7 +772,7 @@ async function getAccessToken(){
     const res = await msalInstance.acquireTokenSilent(req);
     return res.accessToken;
   }catch(e){
-    const res = await msalInstance.acquireTokenRedirect(req); // will navigate away
+    const res = await msalInstance.acquireTokenRedirect(req);
     return null;
   }
 }
@@ -796,19 +849,16 @@ async function loadState(){
 }
 
 async function saveBaseline(){
-  // baseline edits (import/clear) are low-frequency and single-editor in practice —
-  // just push straight over, retrying once on a conflict
   for(let attempt=0; attempt<2; attempt++){
     try{
       const result = await saveDriveData({ baseline, scans, sessionTag });
       if(!result.conflict) return;
       const fresh = await fetchDriveData();
-      scans = fresh.scans || scans; // keep latest scans, but our baseline edit wins
+      scans = fresh.scans || scans;
     }catch(e){ console.error(e); showToast('บันทึกข้อมูลตั้งต้นไป OneDrive ไม่สำเร็จ'); return; }
   }
 }
 
-/* scans are edited from many phones at once, so retry with a fresh merge on conflict */
 async function saveScansMerging(mutateFn){
   for(let attempt=0; attempt<5; attempt++){
     try{
@@ -822,8 +872,6 @@ async function saveScansMerging(mutateFn){
   showToast('sync ชนกันหลายครั้ง กรุณาลองสแกนซ้ำ');
 }
 
-/* live sync: poll OneDrive periodically so multiple phones scanning
-   at once see each other's progress reflected on shared views */
 async function pollForChanges(){
   try{
     const data = await fetchDriveData();
@@ -962,6 +1010,7 @@ function printQRCodes(items){
     grid.appendChild(cell);
     new QRCode(qrDiv, { text: buildScanUrl(item.code, item.lot), width:100, height:100, correctLevel: QRCode.CorrectLevel.M });
   });
+  document.body.classList.add('printing-grid');
   setTimeout(()=>window.print(), 300);
 }
 document.getElementById('btn-print-all').addEventListener('click', ()=>printQRCodes(baseline));
@@ -973,6 +1022,184 @@ document.getElementById('ctx-print').addEventListener('click', ()=>{
   if(ctxTargetItem) printQRCodes([ctxTargetItem]);
   hideCtxMenu();
 });
+document.getElementById('ctx-print-fulllabel').addEventListener('click', ()=>{
+  if(ctxTargetItem) openFullLabelModal([ctxTargetItem]);
+  hideCtxMenu();
+});
+
+/* ============================================================
+   FULL LABEL PRINTING (for pallets that don't have a QR yet)
+   ============================================================ */
+const LOGO_B64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAXIAAAB1CAMAAABkiJo3AAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAJnUExURf///7u6ukVBQiMfIHp4ePn5+XR5xQoUmi01qKuu3CUhIri3t+Lj8+jo6PX2+w8YnNPV7d3c3WBovvb29rK13zE5qvr6+sjK6BsloM3MzDY+q9PS0tnY2EhFRlxZWevr67Szs399fqyrqygwpg8ZnEpGR52bm/Dw8KqoqImOzjIvMKSio0VCQ3h1dsXExMrJySQgIQ4Ym/z8/VhVVvLy8jI7qv7+/oKAgY6LjCQtpZaUlUlFRuXk5Hh+yCklJkdERcTG5o6MjHVzc9zb20lGR2pwwfj4/CcjJPj4+F1aW/z8/Ly6utbY7hwmoe7u+FtYWSomJ+Xl5TQwMfT09N/e3s7Nzebl5fv7+/39/WtoaEZDQ8TCw6yqqn58fOnp6ayqqy0pKt7e3isnKG5rbCwoKba1tXl2d3JvcI6NjZeWljAsLerq6tHR0ZGOj9LS0p+dnT87PE5LTDg0NZuZmfX19T05OtLR0VpXWHp3eImHiFVSU2dkZXVyc2BdXuzs7GhlZnx5eqqpqcvKyjYzNKKgoVtYWJyZmigkJTo2N/j399TT07CvsIuJiuLi4nBtboeGhoeFhsTDwy8rLIyKiysoKS4qK+bm5pqZmWFeX/f390E+P0RBQjc0NT47Ozk2N6+urnZ0dYqIiVNQUFJPUHFub+Pi4t3d3Tw5OjMvMMfGxt3c3Ofm5mtpaURAQTMwMYJ/gFpWV4aDhGZjZPPz80M/QMHAwSonKKOhojQxMjYyM29sbbW0tL28vJiWlpWTk+Hh4c/OzuDg4FRRUk1KSz88PXd1dVpXVzIuL4+NjiYiI5qYmb69vQAAABY7ZzkAAADNdFJOU///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////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";
+let fullLabelTargetItems = [];
+
+function todayISO(){
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+function formatDateTH(iso){
+  if(!iso) return '__/__/____';
+  const [y,m,d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+}
+
+function openFullLabelModal(items){
+  if(!items || items.length===0){ showToast('ไม่มีรายการที่เลือกไว้'); return; }
+  fullLabelTargetItems = items;
+  document.getElementById('fl-item-hint').textContent = items.length===1
+    ? `${items[0].code} · LOT ${items[0].lot||'—'}`
+    : `${items.length} รายการที่เลือก`;
+  document.getElementById('fl-date').value = todayISO();
+  document.getElementById('fl-pallet').value = '1/1';
+  document.getElementById('fl-type').value = 'finished';
+  document.getElementById('fl-type').dispatchEvent(new Event('change'));
+  document.getElementById('modal-fulllabel').classList.remove('hidden');
+}
+function closeFullLabelModal(){
+  document.getElementById('modal-fulllabel').classList.add('hidden');
+}
+document.getElementById('fl-close').addEventListener('click', closeFullLabelModal);
+document.getElementById('fl-cancel').addEventListener('click', closeFullLabelModal);
+document.getElementById('fl-type').addEventListener('change', (e)=>{
+  const isIncoming = e.target.value === 'incoming';
+  document.getElementById('fl-date-label').textContent = isIncoming ? 'วันที่รับเข้า (Receive Date)' : 'วันที่ผลิต (MFG)';
+  document.getElementById('fl-pallet-wrap').style.display = isIncoming ? 'block' : 'none';
+});
+
+document.getElementById('btn-print-fulllabel-selected').addEventListener('click', ()=>{
+  const items = baseline.filter(it=>selectedKeys.has(keyOf(it.code, it.lot)));
+  openFullLabelModal(items);
+});
+
+/* Exact coordinates (in pt, page-absolute, top-left origin) measured from the
+   source Excel/PDF templates (150dpi pixel border-detection + PDF text bbox extraction). */
+function buildFullLabelPageHTML(item, type, dateStr, palletStr, qrDataUrl){
+  const qty = (item.qty||0).toLocaleString();
+  const unit = item.unit || '—';
+
+  if(type === 'incoming'){
+    // table: left 50.4pt, width 502.56pt (label col 159.84pt + value col 342.72pt)
+    // row tops: 136.32, 240.96, 345.12, 445.92, 550.08, 654.72, bottom 780.0
+    const L=50.4, R=553.0, COLX=210.24, ROWS=[136.32,240.96,345.12,445.92,550.08,654.72,780.0];
+    const rowMid = i => (ROWS[i]+ROWS[i+1])/2;
+    return `
+    <div class="fl-canvas">
+      <div class="fl-abs" style="left:${L}pt;top:0pt;width:119.6pt;height:37.77pt;"><img src="${LOGO_B64}" style="width:100%;height:100%;object-fit:contain;"></div>
+      <div class="fl-abs" style="left:${R-56.7}pt;top:3pt;width:56.7pt;height:56.7pt;"><img src="${qrDataUrl}" style="width:100%;height:100%;"></div>
+      <div class="fl-abs fl-center" style="left:${L}pt;top:82pt;width:${R-L}pt;height:46pt;font-size:30pt;">ใบรับเข้าวัตถุดิบ (INCOMING TAG)</div>
+
+      <div class="fl-line-h" style="left:${L}pt;top:${ROWS[0]}pt;width:${R-L}pt;"></div>
+      <div class="fl-line-h" style="left:${L}pt;top:${ROWS[1]}pt;width:${R-L}pt;"></div>
+      <div class="fl-line-h" style="left:${L}pt;top:${ROWS[2]}pt;width:${R-L}pt;"></div>
+      <div class="fl-line-h" style="left:${L}pt;top:${ROWS[3]}pt;width:${R-L}pt;"></div>
+      <div class="fl-line-h" style="left:${L}pt;top:${ROWS[4]}pt;width:${R-L}pt;"></div>
+      <div class="fl-line-h" style="left:${L}pt;top:${ROWS[5]}pt;width:${R-L}pt;"></div>
+      <div class="fl-line-h" style="left:${L}pt;top:${ROWS[6]}pt;width:${R-L}pt;"></div>
+      <div class="fl-line-v" style="left:${L}pt;top:${ROWS[0]}pt;height:${ROWS[6]-ROWS[0]}pt;"></div>
+      <div class="fl-line-v" style="left:${COLX}pt;top:${ROWS[0]}pt;height:${ROWS[6]-ROWS[0]}pt;"></div>
+      <div class="fl-line-v" style="left:${R}pt;top:${ROWS[0]}pt;height:${ROWS[6]-ROWS[0]}pt;"></div>
+
+      <div class="fl-abs fl-center" style="left:${L}pt;top:${ROWS[0]}pt;width:${COLX-L}pt;height:${ROWS[1]-ROWS[0]}pt;font-size:22pt;line-height:1.25;"><div class="fl-inner">รหัสภายใน<br><span style="font-size:18pt;">(Item Code)</span></div></div>
+      <div class="fl-abs fl-center" style="left:${COLX}pt;top:${ROWS[0]}pt;width:${R-COLX}pt;height:${ROWS[1]-ROWS[0]}pt;font-size:52pt;font-weight:700;">${escapeHtml(item.code)}</div>
+
+      <div class="fl-abs fl-center" style="left:${L}pt;top:${ROWS[1]}pt;width:${COLX-L}pt;height:${ROWS[2]-ROWS[1]}pt;font-size:22pt;line-height:1.25;"><div class="fl-inner">เลขที่ผลิต<br><span style="font-size:18pt;">(Lot No.)</span></div></div>
+      <div class="fl-abs fl-center" style="left:${COLX}pt;top:${ROWS[1]}pt;width:${R-COLX}pt;height:${ROWS[2]-ROWS[1]}pt;font-size:44pt;font-weight:700;">${escapeHtml(item.lot||'—')}</div>
+
+      <div class="fl-abs fl-center" style="left:${L}pt;top:${ROWS[2]}pt;width:${COLX-L}pt;height:${ROWS[3]-ROWS[2]}pt;font-size:22pt;line-height:1.25;"><div class="fl-inner">จำนวน<br><span style="font-size:18pt;">(Quantity)</span></div></div>
+      <div class="fl-abs fl-center" style="left:${COLX}pt;top:${ROWS[2]}pt;width:${R-COLX}pt;height:${ROWS[3]-ROWS[2]}pt;font-size:52pt;font-weight:700;">${qty}&nbsp;&nbsp;${escapeHtml(unit)}</div>
+
+      <div class="fl-abs fl-center" style="left:${L}pt;top:${ROWS[3]}pt;width:${COLX-L}pt;height:${ROWS[4]-ROWS[3]}pt;font-size:22pt;line-height:1.25;"><div class="fl-inner">วันที่รับเข้า<br><span style="font-size:18pt;">(Receive Date)</span></div></div>
+      <div class="fl-abs fl-center" style="left:${COLX}pt;top:${ROWS[3]}pt;width:${R-COLX}pt;height:${ROWS[4]-ROWS[3]}pt;font-size:44pt;font-weight:700;">${formatDateTH(dateStr)}</div>
+
+      <div class="fl-abs fl-center" style="left:${L}pt;top:${ROWS[4]}pt;width:${COLX-L}pt;height:${ROWS[5]-ROWS[4]}pt;font-size:22pt;line-height:1.25;"><div class="fl-inner">จำนวนพาเลท<br><span style="font-size:18pt;">(Pallet Quantity)</span></div></div>
+      <div class="fl-abs fl-center" style="left:${COLX}pt;top:${ROWS[4]}pt;width:${R-COLX}pt;height:${ROWS[5]-ROWS[4]}pt;font-size:52pt;font-weight:700;">${escapeHtml(palletStr||'—')}</div>
+
+      <div class="fl-abs" style="left:${L+8}pt;top:${ROWS[5]+16}pt;font-size:24pt;">ผู้ตรวจสอบ (Checked by) <span style="display:inline-block;width:180pt;border-bottom:1pt solid #000;">&nbsp;</span></div>
+      <div class="fl-abs" style="left:${L+8}pt;top:${ROWS[5]+68}pt;font-size:11pt;color:#333;">สำหรับแผนกประกันคุณภาพ (QA)</div>
+
+      <div class="fl-abs" style="left:${L}pt;top:807pt;font-size:8pt;color:#555;">Eff. 01/11/2023 Rev.00</div>
+      <div class="fl-abs" style="left:${R-70}pt;top:807pt;font-size:8pt;color:#555;">FM-QA-003</div>
+    </div>`;
+  }
+
+  // finished goods pallet tag
+  // table: left 50.4pt, right 543.84pt (label col to 214.56pt, value col to right)
+  // net-weight row splits value col at 399.84pt
+  const L=50.4, R=543.84, COLX=214.56, NETX=399.84;
+  const ROWS=[251.04,381.6,512.16,642.72,772.8];
+  return `
+    <div class="fl-canvas">
+      <div class="fl-abs fl-center" style="left:0;top:26pt;width:595.3pt;font-size:15pt;font-weight:700;">บริษัท ยูนิค ไพลีเมอร์ จำกัด</div>
+      <div class="fl-abs" style="left:${L}pt;top:92.78pt;width:117.72pt;height:37.77pt;"><img src="${LOGO_B64}" style="width:100%;height:100%;object-fit:contain;"></div>
+      <div class="fl-abs" style="left:349.65pt;top:96pt;width:56.1pt;height:56.7pt;"><img src="${qrDataUrl}" style="width:100%;height:100%;"></div>
+      <div class="fl-abs" style="left:422.8pt;top:96pt;width:102pt;height:80pt;border:1pt solid #000;font-size:8pt;padding:4pt 6pt;box-sizing:border-box;line-height:2.1;">Checked by: __________<br>Date: ____/____/________</div>
+      <div class="fl-abs fl-center" style="left:${L}pt;top:206pt;width:${R-L}pt;height:32pt;font-size:22pt;font-weight:700;">ใบกำกับสินค้า (Finished Goods Tag)</div>
+
+      <div class="fl-line-h" style="left:${L}pt;top:${ROWS[0]}pt;width:${R-L}pt;"></div>
+      <div class="fl-line-h" style="left:${L}pt;top:${ROWS[1]}pt;width:${R-L}pt;"></div>
+      <div class="fl-line-h" style="left:${L}pt;top:${ROWS[2]}pt;width:${R-L}pt;"></div>
+      <div class="fl-line-h" style="left:${L}pt;top:${ROWS[3]}pt;width:${R-L}pt;"></div>
+      <div class="fl-line-h" style="left:${L}pt;top:${ROWS[4]}pt;width:${R-L}pt;"></div>
+      <div class="fl-line-v" style="left:${L}pt;top:${ROWS[0]}pt;height:${ROWS[4]-ROWS[0]}pt;"></div>
+      <div class="fl-line-v" style="left:${COLX}pt;top:${ROWS[0]}pt;height:${ROWS[4]-ROWS[0]}pt;"></div>
+      <div class="fl-line-v" style="left:${R}pt;top:${ROWS[0]}pt;height:${ROWS[4]-ROWS[0]}pt;"></div>
+      <div class="fl-line-v" style="left:${NETX}pt;top:${ROWS[2]}pt;height:${ROWS[3]-ROWS[2]}pt;"></div>
+
+      <div class="fl-abs fl-center" style="left:${L}pt;top:${ROWS[0]}pt;width:${COLX-L}pt;height:${ROWS[1]-ROWS[0]}pt;font-size:20pt;font-weight:700;line-height:1.3;"><div class="fl-inner">ชื่อสินค้า<br><span style="font-size:16pt;">(Product Name)</span></div></div>
+      <div class="fl-abs fl-center" style="left:${COLX}pt;top:${ROWS[0]}pt;width:${R-COLX}pt;height:${ROWS[1]-ROWS[0]}pt;font-size:30pt;font-weight:700;padding:0 6pt;box-sizing:border-box;">${escapeHtml(item.desc || item.code)}</div>
+
+      <div class="fl-abs fl-center" style="left:${L}pt;top:${ROWS[1]}pt;width:${COLX-L}pt;height:${ROWS[2]-ROWS[1]}pt;font-size:20pt;font-weight:700;line-height:1.3;"><div class="fl-inner">เลขที่ผลิต<br><span style="font-size:16pt;">(Lot No.)</span></div></div>
+      <div class="fl-abs fl-center" style="left:${COLX}pt;top:${ROWS[1]}pt;width:${R-COLX}pt;height:${ROWS[2]-ROWS[1]}pt;font-size:27pt;font-weight:700;padding:0 6pt;box-sizing:border-box;">${escapeHtml(item.lot||'—')}</div>
+
+      <div class="fl-abs fl-center" style="left:${L}pt;top:${ROWS[2]}pt;width:${COLX-L}pt;height:${ROWS[3]-ROWS[2]}pt;font-size:20pt;font-weight:700;line-height:1.3;"><div class="fl-inner">น้ำหนักสุทธิ<br><span style="font-size:16pt;">(Net Weight)</span></div></div>
+      <div class="fl-abs fl-center" style="left:${COLX}pt;top:${ROWS[2]}pt;width:${NETX-COLX}pt;height:${ROWS[3]-ROWS[2]}pt;font-size:36pt;font-weight:700;">${qty}</div>
+      <div class="fl-abs fl-center" style="left:${NETX}pt;top:${ROWS[2]}pt;width:${R-NETX}pt;height:${ROWS[3]-ROWS[2]}pt;font-size:22pt;line-height:1.3;"><div class="fl-inner">หน่วย<br>${escapeHtml(unit)}</div></div>
+
+      <div class="fl-abs fl-center" style="left:${L}pt;top:${ROWS[3]}pt;width:${COLX-L}pt;height:${ROWS[4]-ROWS[3]}pt;font-size:20pt;font-weight:700;line-height:1.3;"><div class="fl-inner">วันที่ผลิต<br><span style="font-size:16pt;">(MFG)</span></div></div>
+      <div class="fl-abs fl-center" style="left:${COLX}pt;top:${ROWS[3]}pt;width:${R-COLX}pt;height:${ROWS[4]-ROWS[3]}pt;font-size:36pt;font-weight:700;">${formatDateTH(dateStr)}</div>
+
+      <div class="fl-abs" style="left:${L}pt;top:807pt;font-size:8pt;color:#555;">Eff. 01/11/2023 Rev.00</div>
+      <div class="fl-abs" style="left:${R-70}pt;top:807pt;font-size:8pt;color:#555;">FM-QA-006</div>
+    </div>`;
+}
+
+document.getElementById('fl-print').addEventListener('click', ()=>{
+  if(fullLabelTargetItems.length===0){ closeFullLabelModal(); return; }
+  const type = document.getElementById('fl-type').value;
+  const dateStr = document.getElementById('fl-date').value;
+  const palletStr = document.getElementById('fl-pallet').value.trim();
+
+  const area = document.getElementById('fulllabel-print-area');
+  area.innerHTML = '';
+
+  // build QR codes offscreen first (qrcodejs renders into a DOM node), then read the generated image/canvas as a data URL
+  const tempHolder = document.createElement('div');
+  tempHolder.style.position = 'fixed';
+  tempHolder.style.left = '-9999px';
+  document.body.appendChild(tempHolder);
+
+  const pagesHTML = fullLabelTargetItems.map(item=>{
+    const qrDiv = document.createElement('div');
+    tempHolder.appendChild(qrDiv);
+    new QRCode(qrDiv, { text: buildScanUrl(item.code, item.lot), width:180, height:180, correctLevel: QRCode.CorrectLevel.M });
+    let qrDataUrl = '';
+    const img = qrDiv.querySelector('img');
+    const canvas = qrDiv.querySelector('canvas');
+    if(canvas) qrDataUrl = canvas.toDataURL('image/png');
+    else if(img) qrDataUrl = img.src;
+    return buildFullLabelPageHTML(item, type, dateStr, palletStr, qrDataUrl);
+  });
+
+  document.body.removeChild(tempHolder);
+  area.innerHTML = pagesHTML.join('');
+  closeFullLabelModal();
+  document.body.classList.add('printing-fulllabel');
+  setTimeout(()=>window.print(), 300);
+});
+window.addEventListener('afterprint', ()=>{
+  document.body.classList.remove('printing-grid');
+  document.body.classList.remove('printing-fulllabel');
+});
 
 function hideCtxMenu(){ document.getElementById('ctx-menu').style.display = 'none'; ctxTargetItem = null; }
 document.addEventListener('click', (e)=>{
@@ -982,7 +1209,9 @@ document.addEventListener('scroll', hideCtxMenu, true);
 
 function updateSelectionUI(){
   document.getElementById('sel-count').textContent = selectedKeys.size;
+  document.getElementById('sel-count-fl').textContent = selectedKeys.size;
   document.getElementById('btn-print-selected').disabled = selectedKeys.size===0;
+  document.getElementById('btn-print-fulllabel-selected').disabled = selectedKeys.size===0;
   document.getElementById('chk-all').checked = baseline.length>0 && selectedKeys.size===baseline.length;
 }
 
